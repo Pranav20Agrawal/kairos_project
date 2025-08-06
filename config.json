@@ -1,0 +1,430 @@
+{
+    "core": {
+        "camera_index": 0,
+        "fist_threshold": 0.08,
+        "open_palm_threshold": 0.2,
+        "silence_duration": 2.0,
+        "silence_threshold": 350,
+        "daily_briefing_time": "07:00",
+        "setup_complete": true,
+        "paranoid_mode_enabled": false,
+        "update_checker_url": "https://raw.githubusercontent.com/YourUsername/YourRepo/main/version.txt"
+    },
+    "theme": {
+        "primary_color": "#4a90e2",
+        "secondary_color": "#50e3c2"
+    },
+    "dashboard": {
+        "widgets": {
+            "VIDEO_FEED": {
+                "name": "Video Feed",
+                "enabled": true,
+                "row": 0,
+                "col": 0,
+                "row_span": 1,
+                "col_span": 2
+            },
+            "SYSTEM_STATS": {
+                "name": "System Monitor",
+                "enabled": true,
+                "row": 1,
+                "col": 0,
+                "row_span": 1,
+                "col_span": 1
+            },
+            "COMMAND_LOG": {
+                "name": "Command Log",
+                "enabled": true,
+                "row": 1,
+                "col": 1,
+                "row_span": 2,
+                "col_span": 1
+            },
+            "WEATHER": {
+                "name": "Weather",
+                "enabled": false,
+                "row": 2,
+                "col": 0,
+                "row_span": 1,
+                "col_span": 1
+            }
+        }
+    },
+    "intents": {
+        "GET_TODAYS_DATE": {
+            "keywords": [
+                "what is today's date",
+                "what's the date",
+                "tell me the date"
+            ],
+            "canonical": "get the current date",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "ANALYZE_SCREEN": {
+            "keywords": [
+                "analyze this",
+                "analyze the screen",
+                "what do you see",
+                "any suggestions"
+            ],
+            "canonical": "analyze the content of the current screen",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "GET_SYSTEM_STATS": {
+            "keywords": [
+                "system status",
+                "system stats",
+                "cpu usage",
+                "ram usage",
+                "performance check"
+            ],
+            "canonical": "get the current system performance status",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "NEXT_DESKTOP": {
+            "keywords": [
+                "next desktop",
+                "switch desktop right",
+                "move right"
+            ],
+            "canonical": "switch to the next virtual desktop",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "PREVIOUS_DESKTOP": {
+            "keywords": [
+                "previous desktop",
+                "switch desktop left",
+                "move left"
+            ],
+            "canonical": "switch to the previous virtual desktop",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SEND_WHATSAPP_MESSAGE": {
+            "keywords": [
+                "whatsapp",
+                "send a message"
+            ],
+            "canonical": "send a whatsapp message to a contact",
+            "triggers": [
+                "send a message to",
+                "send a whatsapp to",
+                "tell"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "GET_WEATHER": {
+            "keywords": [
+                "weather",
+                "forecast",
+                "temperature"
+            ],
+            "canonical": "get the weather forecast",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SEARCH_WEB": {
+            "keywords": [
+                "search",
+                "find",
+                "look up",
+                "google"
+            ],
+            "canonical": "search the web for information",
+            "triggers": [
+                "search for",
+                "find",
+                "look up",
+                "google",
+                "search"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "WRITE_CODE": {
+            "keywords": [
+                "write code",
+                "generate code",
+                "write a function"
+            ],
+            "canonical": "write a piece of code based on a description",
+            "triggers": [
+                "write code for",
+                "write code to",
+                "write a function for",
+                "write a function to",
+                "generate code for",
+                "generate code to"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "CLOSE_WINDOW": {
+            "keywords": [
+                "close window",
+                "exit application",
+                "terminate"
+            ],
+            "canonical": "close the current window",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "CLOSE_TAB": {
+            "keywords": [
+                "close",
+                "close tab",
+                "close this"
+            ],
+            "canonical": "close the current browser tab",
+            "triggers": [],
+            "contexts": [
+                "chrome.exe",
+                "msedge.exe",
+                "firefox.exe"
+            ],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SET_REMINDER": {
+            "keywords": [
+                "set a reminder",
+                "remind me to"
+            ],
+            "canonical": "create a reminder for a task",
+            "triggers": [
+                "remind me to"
+            ],
+            "contexts": [],
+            "starts_conversation": true,
+            "initial_prompt": "Okay, what should I remind you about?",
+            "conversation_state": "AWAITING_REMINDER_CONTENT",
+            "is_high_risk": false
+        },
+        "SHOW_PROJECT_STATUS": {
+            "keywords": [
+                "project status",
+                "status on the project"
+            ],
+            "canonical": "show me the current status of the project",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "OPEN_PROJECT_FOLDER": {
+            "keywords": [
+                "open project",
+                "show me the project files"
+            ],
+            "canonical": "open the main project folder",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "STOP_ACTION": {
+            "keywords": [
+                "stop",
+                "cancel",
+                "abort",
+                "never mind",
+                "hold on"
+            ],
+            "canonical": "cancel the current action",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "OPEN_LAST_RECEIVED_FILE": {
+            "keywords": [
+                "open the last file",
+                "open what I just sent",
+                "show me the file"
+            ],
+            "canonical": "open the last file received from another device",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "SCROLL_UP": {
+            "keywords": [
+                "scroll up",
+                "go up"
+            ],
+            "canonical": "scroll the page up",
+            "triggers": [
+                "scroll up a little",
+                "scroll up a bit",
+                "scroll up a lot",
+                "scroll up"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SCROLL_DOWN": {
+            "keywords": [
+                "scroll down",
+                "go down"
+            ],
+            "canonical": "scroll the page down",
+            "triggers": [
+                "scroll down a little",
+                "scroll down a bit",
+                "scroll down a lot",
+                "scroll down"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "MAXIMIZE_WINDOW": {
+            "keywords": [
+                "maximize window",
+                "full screen"
+            ],
+            "canonical": "make the current window full screen",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "MINIMIZE_WINDOW": {
+            "keywords": [
+                "minimize window",
+                "hide this window"
+            ],
+            "canonical": "minimize the current window",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SNAP_WINDOW_LEFT": {
+            "keywords": [
+                "snap left",
+                "snap window left"
+            ],
+            "canonical": "snap the current window to the left half of the screen",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SNAP_WINDOW_RIGHT": {
+            "keywords": [
+                "snap right",
+                "snap window right"
+            ],
+            "canonical": "snap the current window to the right half of the screen",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "CONFIRM_SUGGESTION": {
+            "keywords": [
+                "yes",
+                "yeah",
+                "yep",
+                "sure",
+                "do it",
+                "confirm",
+                "go ahead"
+            ],
+            "canonical": "confirm a proactive suggestion",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        }
+    },
+    "sites": {
+        "youtube": "https://www.youtube.com",
+        "vtop": "https://vtop.vit.ac.in"
+    },
+    "macros": {
+        "START_CODING_SESSION": [
+            {
+                "action": "OPEN_APP",
+                "param": "C:\\Users\\athar\\AppData\\Local\\Programs\\Microsoft VS Code\\Code.exe"
+            },
+            {
+                "action": "WAIT",
+                "param": "5"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "spotify"
+            }
+        ]
+    }
+}

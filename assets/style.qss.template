@@ -1,0 +1,121 @@
+/* src/assets/style.qss.template */
+
+QWidget {
+    background-color: #2c2c2c;
+    color: #f0f0f0;
+    font-family: "Segoe UI", "Cantarell", "sans-serif";
+    font-size: 10pt;
+}
+
+QMainWindow, QDialog {
+    background-color: #252525;
+}
+
+#nav_panel {
+    background-color: #1e1e1e;
+    border-bottom: 2px solid {{PRIMARY_COLOR}};
+}
+
+QPushButton {
+    background-color: #4a4a4a;
+    color: #f0f0f0;
+    border: 1px solid #606060;
+    padding: 8px 16px;
+    border-radius: 4px;
+}
+
+QPushButton:hover {
+    background-color: #5a5a5a;
+    border: 1px solid {{SECONDARY_COLOR}};
+}
+
+QPushButton:pressed {
+    background-color: {{PRIMARY_COLOR}};
+}
+
+QPushButton:disabled {
+    background-color: #404040;
+    color: #808080;
+}
+
+QLabel {
+    background-color: transparent;
+}
+
+QGroupBox {
+    border: 1px solid #505050;
+    border-radius: 4px;
+    margin-top: 1ex;
+    font-weight: bold;
+}
+
+QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding: 0 3px;
+}
+
+QTableWidget {
+    background-color: #333333;
+    border: 1px solid #505050;
+    gridline-color: #505050;
+}
+
+QHeaderView::section {
+    background-color: #4a4a4a;
+    padding: 4px;
+    border: 1px solid #606060;
+    font-weight: bold;
+}
+
+QTableWidget::item {
+    padding: 5px;
+}
+
+QTableWidget::item:selected {
+    background-color: {{PRIMARY_COLOR}};
+    color: black;
+}
+
+QTextEdit, QLineEdit, QDoubleSpinBox {
+    background-color: #3c3c3c;
+    border: 1px solid #606060;
+    border-radius: 4px;
+    padding: 5px;
+}
+
+QSlider::groove:horizontal {
+    border: 1px solid #bbb;
+    background: #5c5c5c;
+    height: 8px;
+    border-radius: 4px;
+}
+
+QSlider::handle:horizontal {
+    background: {{SECONDARY_COLOR}};
+    border: 1px solid {{SECONDARY_COLOR}};
+    width: 18px;
+    margin: -2px 0;
+    border-radius: 9px;
+}
+
+QTabWidget::pane {
+    border-top: 2px solid {{PRIMARY_COLOR}};
+}
+
+QTabBar::tab {
+    background: #4a4a4a;
+    border: 1px solid #606060;
+    padding: 8px 20px;
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+QTabBar::tab:selected, QTabBar::tab:hover {
+    background: #5a5a5a;
+}
+
+QTabBar::tab:selected {
+    border-color: #9B9B9B;
+    border-bottom-color: {{PRIMARY_COLOR}}; /* same as pane color */
+}

@@ -1,0 +1,65 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.pyc
+*.pyd
+
+# Virtual Environment
+venv/
+.venv/
+env/
+.env
+
+# AI Models & Data
+models/
+pretrained_models/
+wav2vec2_checkpoints/
+*.gguf
+*.onnx
+*.npy
+*.bin
+*.ckpt
+*.safetensors
+
+# Logs and Databases
+*.log
+*.prof
+*.db
+*.sqlite3
+feedback.db
+activity_log.csv
+
+# IDE / Editor specific
+.vscode/
+.idea/
+
+# Distribution / Packaging
+*.spec
+
+# Other
+scikit_image-*.whl
+
+# Flutter / Dart
+kairos_mobile_app/build/
+kairos_mobile_app/.dart_tool/
+kairos_mobile_app/.flutter-plugins
+kairos_mobile_app/.flutter-plugins-dependencies
