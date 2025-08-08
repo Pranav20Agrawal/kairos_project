@@ -4,11 +4,13 @@
         "fist_threshold": 0.08,
         "open_palm_threshold": 0.2,
         "silence_duration": 2.0,
-        "silence_threshold": 350,
+        "silence_threshold": 1,
+        "silence_threshold_multiplier": 2.5,
+        "speaker_verification_threshold": 0.55,
         "daily_briefing_time": "07:00",
         "setup_complete": true,
         "paranoid_mode_enabled": false,
-        "update_checker_url": "https://raw.githubusercontent.com/YourUsername/YourRepo/main/version.txt"
+        "update_checker_url": null
     },
     "theme": {
         "primary_color": "#4a90e2",

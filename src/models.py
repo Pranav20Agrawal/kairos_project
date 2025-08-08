@@ -8,12 +8,16 @@ class CoreSettings(BaseModel):
     fist_threshold: float = Field(0.08, ge=0.0, le=1.0, description="Sensitivity for fist gesture detection.")
     open_palm_threshold: float = Field(0.20, ge=0.0, le=1.0, description="Sensitivity for open palm gesture detection.")
     silence_duration: float = Field(2.0, ge=0.5, le=10.0, description="Seconds of silence to end a voice command.")
-    silence_threshold: int = Field(350, ge=0, description="Audio RMS level to be considered silence.")
+    silence_threshold: int = Field(350, ge=0, description="Audio RMS level to be considered silence. (Overridden by auto-calibration)")
+    # <--- MODIFICATION START --->
+    silence_threshold_multiplier: float = Field(2.5, ge=1.0, le=10.0, description="Multiplier for auto-calibrated silence threshold.")
+    speaker_verification_threshold: float = Field(0.55, ge=0.0, le=1.0, description="Similarity score required to verify the user's voice (0.0 to 1.0).")
+    # <--- MODIFICATION END --->
     daily_briefing_time: str = Field("07:00", pattern=r"^\d{2}:\d{2}$", description="HH:MM time for the daily briefing.")
     setup_complete: bool = Field(False, description="Flag to indicate if the first-time setup has been completed.")
     paranoid_mode_enabled: bool = Field(False, description="If true, all high-risk intents are disabled.")
     update_checker_url: Optional[str] = Field(
-        "https://raw.githubusercontent.com/YourUsername/YourRepo/main/version.txt", 
+        None, 
         description="URL to the raw version.txt file for update checks."
     )
 
@@ -35,9 +39,7 @@ class ThemeSettings(BaseModel):
     primary_color: str = Field("#4a90e2", description="The main accent color for highlights and borders.")
     secondary_color: str = Field("#50e3c2", description="The secondary accent color for interactive elements like sliders.")
 
-# <--- NEW: Models for the customizable dashboard --->
 class WidgetConfig(BaseModel):
-    """Configuration for a single dashboard widget."""
     name: str = Field(description="Display name for the widget.")
     enabled: bool = Field(True, description="Whether the widget is visible on the dashboard.")
     row: int = Field(description="Grid row for the widget.")
@@ -46,7 +48,6 @@ class WidgetConfig(BaseModel):
     col_span: int = Field(1, description="Number of columns the widget should span.")
 
 class DashboardSettings(BaseModel):
-    """Holds the configuration for all available dashboard widgets."""
     widgets: Dict[str, WidgetConfig] = Field(default_factory=lambda: {
         "VIDEO_FEED": WidgetConfig(name="Video Feed", enabled=True, row=0, col=0, row_span=1, col_span=2),
         "SYSTEM_STATS": WidgetConfig(name="System Monitor", enabled=True, row=1, col=0, row_span=1, col_span=1),
@@ -55,10 +56,9 @@ class DashboardSettings(BaseModel):
     })
 
 class SettingsModel(BaseModel):
-    """The root model for the entire K.A.I.R.O.S. configuration."""
     core: CoreSettings = Field(default_factory=CoreSettings)
     theme: ThemeSettings = Field(default_factory=ThemeSettings)
-    dashboard: DashboardSettings = Field(default_factory=DashboardSettings) # <--- NEW
+    dashboard: DashboardSettings = Field(default_factory=DashboardSettings)
     intents: Dict[str, Intent] = Field(default_factory=dict)
     sites: Dict[str, str] = Field(default_factory=dict)
     macros: Dict[str, List[MacroStep]] = Field(default_factory=dict)

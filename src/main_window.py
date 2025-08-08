@@ -4,7 +4,8 @@ from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl
 from PySide6.QtGui import QCloseEvent, QIcon, QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget,
-    QFrame, QMessageBox, QStatusBar, QSystemTrayIcon, QMenu, QApplication
+    QFrame, QMessageBox, QStatusBar, QSystemTrayIcon, QMenu, QApplication,
+    QLineEdit, QLabel
 )
 from PySide6.QtMultimedia import QSoundEffect
 from pathlib import Path
@@ -46,15 +47,15 @@ class KairosMainWindow(QMainWindow):
         self.interrupt_event = threading.Event()
         self.pending_suggestion: List[str] | None = None
         self.targeted_window: Any | None = None
+        self.startup_complete = False
 
         logger.info("Initializing backend components...")
         self.settings_manager = SettingsManager()
         self.db_manager = DatabaseManager()
         self.nlu_engine = NluEngine(self.settings_manager)
-        
         self.speaker_worker = SpeakerWorker()
         self.action_manager = ActionManager(self.settings_manager, self.interrupt_event, self.speaker_worker)
-        
+        self.audio_worker = AudioWorker(self.settings_manager)
         self.scheduler = Scheduler()
         self.context_manager = ContextManager()
 
@@ -65,7 +66,14 @@ class KairosMainWindow(QMainWindow):
         self.connect_signals()
         self._schedule_jobs()
         self._start_workers()
+
         logger.info("K.A.I.R.O.S. Main Window initialized successfully.")
+
+    def _play_startup_sound(self):
+        """Speaks a welcome message and marks the startup sequence as complete."""
+        logger.info("Speaker is ready. Playing startup sound and finalizing sequence.")
+        self.action_manager._speak("KAIROS systems are online.")
+        self.startup_complete = True
 
     def _apply_theme(self) -> None:
         try:
@@ -83,6 +91,7 @@ class KairosMainWindow(QMainWindow):
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
         main_layout = QVBoxLayout(main_widget)
+        
         nav_panel = QFrame()
         nav_panel.setObjectName("nav_panel")
         nav_panel.setFixedHeight(50)
@@ -93,6 +102,7 @@ class KairosMainWindow(QMainWindow):
         nav_layout.addWidget(btn_dashboard)
         nav_layout.addWidget(btn_settings)
         nav_layout.addWidget(btn_analytics)
+
         self.stacked_widget = QStackedWidget()
         self.dashboard_widget = DashboardWidget(self.settings_manager, self.db_manager)
         self.settings_widget = SettingsWidget(self.settings_manager)
@@ -100,11 +110,28 @@ class KairosMainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.dashboard_widget)
         self.stacked_widget.addWidget(self.settings_widget)
         self.stacked_widget.addWidget(self.analytics_widget)
+
+        # <--- MODIFICATION START: Add Chat Input Box --->
+        chat_input_frame = QFrame()
+        chat_input_layout = QHBoxLayout(chat_input_frame)
+        chat_input_layout.setContentsMargins(5, 5, 5, 5)
+        
+        chat_label = QLabel("Command:")
+        self.chat_input = QLineEdit()
+        self.chat_input.setPlaceholderText("Type a command and press Enter...")
+        
+        chat_input_layout.addWidget(chat_label)
+        chat_input_layout.addWidget(self.chat_input)
+        # <--- MODIFICATION END --->
+
         main_layout.addWidget(nav_panel)
         main_layout.addWidget(self.stacked_widget)
-        main_layout.setStretch(1, 1)
+        main_layout.addWidget(chat_input_frame) # Add the chat box to the bottom
+        main_layout.setStretch(1, 1) # Make the stacked widget take most of the space
+
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("K.A.I.R.O.S. Initialized and Ready.", 5000)
+        
         btn_dashboard.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.dashboard_widget))
         btn_settings.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.settings_widget))
         btn_analytics.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.analytics_widget))
@@ -148,6 +175,10 @@ class KairosMainWindow(QMainWindow):
         self.settings_manager.settings_updated.connect(self.dashboard_widget._reload_ui)
         QApplication.instance().aboutToQuit.connect(self._shutdown_application)
         self.action_manager.ocr_requested.connect(self._trigger_ocr_worker)
+        self.speaker_worker.model_loaded.connect(self._play_startup_sound)
+        # <--- MODIFICATION START: Connect the chat input --->
+        self.chat_input.returnPressed.connect(self.handle_chat_submission)
+        # <--- MODIFICATION END --->
 
     def _schedule_jobs(self) -> None:
         try:
@@ -167,7 +198,6 @@ class KairosMainWindow(QMainWindow):
         self.video_worker.window_targeted.connect(self.set_targeted_window)
         self.video_worker.start()
 
-        self.audio_worker = AudioWorker(self.settings_manager)
         self.audio_worker.new_transcription_with_emotion.connect(self.handle_transcription)
         self.audio_worker.error_occurred.connect(self.handle_system_message)
         self.audio_worker.start()
@@ -194,7 +224,6 @@ class KairosMainWindow(QMainWindow):
         self.activity_logger_worker.start()
         
     def set_targeted_window(self, window_object: Any):
-        """Stores the window currently being pointed at."""
         self.targeted_window = window_object
         logger.debug(f"Gesture context updated: Targeted window is now '{window_object.title}'")
 
@@ -232,6 +261,7 @@ class KairosMainWindow(QMainWindow):
         elif level.upper() == "WARNING": self.statusBar().showMessage(f"Warning: {message}", 5000)
 
     def handle_gesture(self, intent: str, entities: Dict[str, Any] | None = None) -> None:
+        logger.info(f"[GESTURE CONFIRMED] Received intent '{intent}' from VideoWorker. Executing action.")
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         if intent == "[STOP_ACTION]":
             self.interrupt_event.set()
@@ -244,18 +274,40 @@ class KairosMainWindow(QMainWindow):
         if state == "PRIMED": self.primed_sound.play()
 
     def handle_proactive_suggestion(self, suggestion_text: str, app_sequence: List[str]):
+        if not self.startup_complete:
+            logger.info("Startup sequence not complete — skipping proactive suggestion.")
+            return
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.new_log_entry.emit(timestamp, "[BRAIN]", f"Proactive Suggestion: {suggestion_text}", "INFO", {})
         self.action_manager._speak(suggestion_text)
         self.pending_suggestion = app_sequence
 
-    def handle_transcription(self, text: str, emotion: str) -> None:
-        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
-        self.new_log_entry.emit(timestamp, "[VOICE]", text, "INFO", {})
+    # <--- MODIFICATION START: New methods to handle text input --->
+    def handle_chat_submission(self):
+        """Called when the user presses Enter in the chat input box."""
+        text = self.chat_input.text().strip()
+        if not text:
+            return
         
-        emotion_map = {"neu": "Neutral", "hap": "Happy", "sad": "Sad", "ang": "Angry"}
-        emotion_full = emotion_map.get(emotion, emotion.capitalize())
-        self.new_log_entry.emit(timestamp, "[EMOTION]", f"Detected emotion: {emotion_full}", "INFO", {})
+        # Call the central text processor
+        self._process_input_text(text, source="[CHAT]")
+        self.chat_input.clear()
+
+    def handle_transcription(self, text: str, emotion: str):
+        """Called when the AudioWorker has a new transcription."""
+        # This function now just forwards the data to the central processor
+        self._process_input_text(text, source="[VOICE]", emotion=emotion)
+
+    def _process_input_text(self, text: str, source: str, emotion: str = "neu"):
+        """Central processing for any text-based command, from voice or chat."""
+        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        self.new_log_entry.emit(timestamp, source, text, "INFO", {})
+        
+        # Only log emotion if the model was loaded and the source is voice
+        if source == "[VOICE]" and self.audio_worker and self.audio_worker.emotion_model:
+            emotion_map = {"neu": "Neutral", "hap": "Happy", "sad": "Sad", "ang": "Angry"}
+            emotion_full = emotion_map.get(emotion, emotion.capitalize())
+            self.new_log_entry.emit(timestamp, "[EMOTION]", f"Detected emotion: {emotion_full}", "INFO", {})
         
         _, process_name = self.context_manager.get_active_window_info()
         intent, entities, prompt = self.nlu_engine.process(text, context=process_name)
@@ -287,12 +339,11 @@ class KairosMainWindow(QMainWindow):
         self.new_log_entry.emit(timestamp, "[BRAIN]", log_content, "INFO", log_data)
         
         if intent != "[UNKNOWN_INTENT]":
-            # <--- MODIFICATION --->
-            # Pass the detected emotion to the action manager to influence the response tone.
             self.action_manager.execute_action(intent, entities, emotion=emotion)
         
         if prompt:
             self.action_manager._speak(prompt)
+    # <--- MODIFICATION END --->
 
     def _shutdown_application(self) -> None:
         logger.info("Shutdown signal received. Stopping all workers...")

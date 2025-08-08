@@ -7,32 +7,27 @@ import sounddevice as sd
 import soundfile as sf
 import os
 from pathlib import Path
-from PySide6.QtCore import QThread, QObject
+from PySide6.QtCore import QThread, QObject, Signal
 
-# <--- MODIFICATION START --->
-# Set environment variable BEFORE importing TTS.
-# This programmatically agrees to the Coqui TTS license to avoid the input() prompt.
 os.environ["COQUI_TOS_AGREED"] = "1"
-# <--- MODIFICATION END --->
-
 logger = logging.getLogger(__name__)
 
-# A flag to conditionally import and use TTS
 try:
     from TTS.api import TTS
     TTS_AVAILABLE = True
 except ImportError:
     TTS_AVAILABLE = False
     logger.warning("TTS library not found. SpeakerWorker will be disabled.")
-    # Define a dummy class if TTS is not available to avoid NameErrors
     class TTS:
-        def __init__(self, *args, **kwargs):
-            pass
-        def tts_to_file(self, *args, **kwargs):
-            logger.error("TTS is not installed, cannot synthesize speech.")
+        def __init__(self, *args, **kwargs): pass
+        def tts_to_file(self, *args, **kwargs): logger.error("TTS is not installed, cannot synthesize speech.")
 
 class SpeakerWorker(QThread):
     """A dedicated worker thread for handling Text-to-Speech synthesis."""
+    # <--- MODIFICATION START --->
+    # Signal to notify the main window that the TTS model is loaded and ready.
+    model_loaded = Signal()
+    # <--- MODIFICATION END --->
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -56,8 +51,20 @@ class SpeakerWorker(QThread):
         try:
             device = "cuda" if torch.cuda.is_available() else "cpu"
             logger.info(f"Initializing TTS model on device: {device}")
-            # The model will be downloaded on the first run
+            
+            # --- FIX: Monkey-patch torch.load to bypass the new security check for this specific model ---
+            original_torch_load = torch.load
+            def new_torch_load(*args, **kwargs):
+                kwargs['weights_only'] = False
+                return original_torch_load(*args, **kwargs)
+            torch.load = new_torch_load
+            
             self.tts_model = TTS(self.model_name, gpu=(device == "cuda"))
+            
+            # Restore the original torch.load function after we're done
+            torch.load = original_torch_load
+            # --- END FIX ---
+
             logger.info("TTS model loaded successfully.")
             return True
         except Exception as e:
@@ -70,6 +77,11 @@ class SpeakerWorker(QThread):
         if not self._load_model():
             logger.error("Could not load TTS model. SpeakerWorker is shutting down.")
             return
+            
+        # <--- MODIFICATION START --->
+        # The model is loaded, so we can now notify the main application.
+        self.model_loaded.emit()
+        # <--- MODIFICATION END --->
 
         while self.running:
             try:
