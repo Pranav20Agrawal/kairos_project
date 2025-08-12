@@ -38,7 +38,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.kairos_mobile_app_fixed"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21
         targetSdk = flutter.targetSdkVersion
         versionCode = flutterVersionCode
         versionName = flutterVersionName
@@ -51,10 +51,14 @@ android {
     }
 }
 
+tasks.withType<JavaCompile> {
+    options.release.set(11)
+}
+
 flutter {
     source = "../.."
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

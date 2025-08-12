@@ -20,18 +20,10 @@ pluginManagement {
 
 plugins {
     id("dev.flutter.flutter-plugin-loader") version "1.0.0"
-    id("com.android.application") version "8.2.2" apply false
+    id("com.android.application") version "8.3.2" apply false
     id("org.jetbrains.kotlin.android") version "1.9.22" apply false
 }
 
 include(":app")
 
-dependencyResolutionManagement {
-    // vvvv THIS IS THE ONLY LINE THAT CHANGED vvvv
-    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
-    repositories {
-        google()
-        mavenCentral()
-        maven { url = uri("https://maven.spotify.com") }
-    }
-}
+// The problematic 'dependencyResolutionManagement' block is now gone.

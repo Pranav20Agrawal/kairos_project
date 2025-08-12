@@ -103,6 +103,12 @@ class AudioWorker(QThread):
 
         try:
             with torch.no_grad():
+                # --- FIX APPLIED HERE ---
+                # The model expects a 2D tensor of shape [batch, samples].
+                # We ensure it has this shape before passing it to the model.
+                if audio_data_tensor.ndim == 1:
+                    audio_data_tensor = audio_data_tensor.unsqueeze(0)
+                
                 embedding = self.embedding_model.encode_batch(audio_data_tensor)
                 embedding_numpy = embedding.squeeze().cpu().numpy()
 
@@ -121,6 +127,10 @@ class AudioWorker(QThread):
         if not callable(self.get_speech_timestamps):
             return [{'start': 0, 'end': len(audio_tensor)}]
         try:
+            # --- FIX APPLIED HERE ---
+            # The VAD model expects a 1D tensor. We ensure it's flattened.
+            if audio_tensor.ndim > 1:
+                audio_tensor = audio_tensor.flatten()
             return self.get_speech_timestamps(audio_tensor, self.vad_model, sampling_rate=sample_rate)
         except Exception as e:
             logger.error(f"VAD processing failed: {e}")
@@ -138,7 +148,6 @@ class AudioWorker(QThread):
 
         try:
             with sd.InputStream(samplerate=RATE, channels=1, blocksize=CHUNK, dtype="int16") as stream:
-                # --- AUTO-CALIBRATION ---
                 logger.info("Calibrating silence threshold for 2 seconds... Please be quiet.")
                 calibration_frames = []
                 num_calibration_chunks = int((RATE * 2) / CHUNK)
@@ -149,9 +158,7 @@ class AudioWorker(QThread):
                 
                 ambient_noise_level = np.mean(calibration_frames)
                 multiplier = self.settings_manager.settings.core.silence_threshold_multiplier
-                # <--- MODIFICATION START: Corrected calibration logic --->
                 calibrated_threshold = ambient_noise_level * multiplier
-                # <--- MODIFICATION END --->
                 
                 logger.info(f"Calibration complete. Ambient noise: {ambient_noise_level:.2f}. Dynamic silence threshold set to: {calibrated_threshold:.2f}")
 
@@ -192,12 +199,16 @@ class AudioWorker(QThread):
                                 logger.warning("VAD found no speech. Discarding.")
                             else:
                                 start, end = speech_timestamps[0]['start'], speech_timestamps[-1]['end']
-                                clean_audio_tensor = torch.from_numpy(audio_float32[start:end]).unsqueeze(0)
+                                # --- FIX APPLIED HERE ---
+                                # Ensure we are slicing a flattened array to get a 1D result
+                                clean_audio_segment = audio_float32.flatten()[start:end]
+                                clean_audio_tensor = torch.from_numpy(clean_audio_segment)
 
                                 if self.is_user_speaking(clean_audio_tensor):
                                     logger.info("User verified. Transcribing command...")
                                     temp_file = "transcribe_temp.wav"
-                                    write(temp_file, RATE, (audio_float32[start:end] * 32767).astype(np.int16))
+                                    # Use the clean audio segment for transcription as well
+                                    write(temp_file, RATE, (clean_audio_segment * 32767).astype(np.int16))
                                     result = self.whisper_model.transcribe(temp_file, fp16=torch.cuda.is_available())
                                     text: str = result["text"].strip()
                                     os.remove(temp_file)

@@ -23,28 +23,30 @@ dependencies:
   
   # Utilities
   path_provider: ^2.1.3
-  file_picker: ^8.0.0+1
+  file_picker: ^10.3.1
   open_filex: ^4.3.4
   url_launcher: ^6.2.6
   collection: ^1.17.2
-  syncfusion_flutter_pdfviewer: ^26.1.42
+  syncfusion_flutter_pdfviewer: ^30.2.4
 
   # Symbiotic Link & Background
   flutter_blue_plus: ^1.31.14
-  web_socket_channel: ^2.4.0
+  web_socket_channel: ^3.0.3
   flutter_background_service: ^5.0.1
-  flutter_local_notifications: ^17.0.0
+  flutter_local_notifications: ^19.4.0
   notification_listener_service: ^0.3.4
   
   # Native Integrations
   # spotify_sdk: ^3.0.2
   wifi_iot: ^0.3.19+2
-  permission_handler: ^11.3.1
+  permission_handler: ^12.0.1
+
+  udp: ^5.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
-  flutter_lints: ^3.0.0
+  flutter_lints: ^6.0.0
 
 flutter:
   uses-material-design: true

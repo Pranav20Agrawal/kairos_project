@@ -13,7 +13,7 @@ import uvicorn
 from typing import Optional, TYPE_CHECKING
 import pyperclip
 
-from src import bluetooth_manager # Ensure this is imported
+from src import bluetooth_manager
 
 if TYPE_CHECKING:
     from src.action_manager import ActionManager
@@ -168,14 +168,11 @@ class KairosAPI:
         @self.app.post("/execute_action")
         def execute_action(request: ActionRequest):
             if self.action_manager:
-                # The phone-to-pc handoff now uses this endpoint.
-                # We need to add its intent to the ActionManager.
                 if request.intent == "HEADSET_HANDOFF_TO_PC":
                     logger.info("Executing headset handoff TO PC.")
                     bluetooth_manager.connect_to_bluetooth_device(request.entity)
                     return {"status": "success", "message": "Headset handoff to PC initiated."}
                 
-                # Handle all other intents as before
                 self.action_manager.execute_action(f"[{request.intent}]", {"entity": request.entity})
                 return {"status": "success", "message": f"Action '{request.intent}' queued for execution."}
             else:
@@ -231,12 +228,25 @@ class ServerWorker(QThread):
         self.server: uvicorn.Server | None = None
 
     def run(self) -> None:
-        kairos_api.loop = asyncio.get_event_loop()
+        # --- FIX APPLIED HERE ---
+        # Create a new event loop for this background thread
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        kairos_api.loop = loop
+        # --- END FIX ---
+        
         kairos_api.set_action_manager(self.action_manager)
-        config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info")
+        config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info", loop="asyncio")
         self.server = uvicorn.Server(config)
+        
         logger.info(f"Starting K.A.I.R.O.S. API server on http://{self.host}:{self.port}")
-        self.server.run()
+        # Uvicorn's run is blocking, so it will keep the thread alive.
+        # We run it within the loop context we've established.
+        loop.run_until_complete(self.server.serve())
         logger.info("K.A.I.R.O.S. API server has shut down.")
 
     def stop(self) -> None:
