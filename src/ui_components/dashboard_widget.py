@@ -1,10 +1,10 @@
 # src/ui_components/dashboard_widget.py
 
 import logging
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Slot
 from PySide6.QtWidgets import (
     QWidget, QGridLayout, QFrame, QLabel, QVBoxLayout, QTableWidget,
-    QTableWidgetItem, QHeaderView, QMenu, QLineEdit
+    QTableWidgetItem, QHeaderView, QMenu, QLineEdit, QGroupBox, QScrollArea
 )
 from PySide6.QtGui import QImage, QPixmap, QColor
 from .correction_dialog import CorrectionDialog
@@ -14,9 +14,10 @@ import cv2
 import numpy as np
 from typing import Any, Dict
 
-# Import the widget classes we want to make available on the dashboard
+# Import the widget classes
 from .widgets.system_stats_widget import SystemStatsWidget
 from .widgets.weather_widget import WeatherWidget
+from .widgets.notification_widget import NotificationWidget
 
 logger = logging.getLogger(__name__)
 
@@ -27,33 +28,25 @@ class DashboardWidget(QWidget):
         self.db_manager = db_manager
         self.log_data_map: dict[int, Any] = {}
         
-        # This "widget store" maps the key from the config to the actual widget class.
-        # This makes it easy to add new widgets in the future.
         self.available_widgets = {
             "SYSTEM_STATS": SystemStatsWidget,
             "WEATHER": WeatherWidget,
         }
         
         self.loaded_widgets: Dict[str, QWidget] = {}
-        
-        # Main layout for the dashboard
         self.main_layout = QGridLayout(self)
-        
         self._setup_ui()
         
-        # Connect signal to reload dashboard if settings change
         self.settings_manager.settings_updated.connect(self._reload_ui)
 
     def _setup_ui(self) -> None:
-        """Dynamically builds the dashboard UI based on the settings."""
         logger.info("Setting up dynamic dashboard UI...")
         dashboard_config = self.settings_manager.settings.dashboard.widgets
         
-        # A special map for widgets that are part of the DashboardWidget itself
-        # and not separate classes.
         self_widgets = {
             "VIDEO_FEED": self._create_video_feed,
-            "COMMAND_LOG": self._create_command_log
+            "COMMAND_LOG": self._create_command_log,
+            "NOTIFICATIONS": self._create_notifications_panel # <-- ADDED
         }
         
         for widget_key, config in dashboard_config.items():
@@ -70,10 +63,8 @@ class DashboardWidget(QWidget):
             if widget_instance:
                 self.main_layout.addWidget(
                     widget_instance,
-                    config.row,
-                    config.col,
-                    config.row_span,
-                    config.col_span
+                    config.row, config.col,
+                    config.row_span, config.col_span
                 )
                 self.loaded_widgets[widget_key] = widget_instance
                 logger.debug(f"Loaded widget '{widget_key}' at ({config.row}, {config.col})")
@@ -81,17 +72,16 @@ class DashboardWidget(QWidget):
                 logger.warning(f"Widget key '{widget_key}' in config but no corresponding class found.")
 
     def _reload_ui(self):
-        """Clears and rebuilds the entire dashboard UI. Called when settings change."""
         logger.info("Reloading dashboard UI due to settings change.")
-        # Clear all widgets from the layout
-        for widget in self.loaded_widgets.values():
-            widget.setParent(None)
-            del widget
-        self.loaded_widgets.clear()
-        # Re-run the setup process
-        self._setup_ui()
+        # Clear all widgets from the layout by deleting them
+        while self.main_layout.count():
+            item = self.main_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-    # --- Methods to create the built-in widgets ---
+        self.loaded_widgets.clear()
+        self._setup_ui()
 
     def _create_video_feed(self) -> QWidget:
         self.video_label = QLabel("Initializing Camera...")
@@ -123,7 +113,24 @@ class DashboardWidget(QWidget):
         log_layout.addWidget(self.log_table)
         return log_panel_frame
 
-    # --- Existing methods for functionality ---
+    def _create_notifications_panel(self) -> QWidget:
+        notifications_group = QGroupBox("Phone Notifications")
+        
+        scroll_area = QScrollArea()
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+
+        container = QWidget()
+        self.notifications_layout = QVBoxLayout(container)
+        self.notifications_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        self.notifications_layout.setSpacing(10)
+        
+        scroll_area.setWidget(container)
+        
+        group_layout = QVBoxLayout(notifications_group)
+        group_layout.addWidget(scroll_area)
+        
+        return notifications_group
 
     def _filter_logs(self, text: str):
         search_term = text.lower()
@@ -224,3 +231,20 @@ class DashboardWidget(QWidget):
         bytes_per_line = ch * w
         convert_to_Qt_format = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format.Format_RGB888)
         return QPixmap.fromImage(convert_to_Qt_format)
+
+    @Slot(dict)
+    def add_notification(self, data: dict):
+        if "NOTIFICATIONS" not in self.loaded_widgets:
+            return
+
+        title = data.get("title", "N/A")
+        content = data.get("content", "")
+        package = data.get("package_name", "")
+
+        notification_card = NotificationWidget(title, content, package)
+        self.notifications_layout.insertWidget(0, notification_card)
+
+        while self.notifications_layout.count() > 10:
+            item = self.notifications_layout.takeAt(self.notifications_layout.count() - 1)
+            if item and item.widget():
+                item.widget().deleteLater()

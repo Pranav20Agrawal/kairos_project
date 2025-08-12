@@ -407,6 +407,81 @@
             "initial_prompt": null,
             "conversation_state": null,
             "is_high_risk": false
+        },
+        "BROWSER_HANDOFF": {
+            "keywords": [
+                "continue this on my phone",
+                "open this on my phone",
+                "send this page to my phone",
+                "switch to phone"
+            ],
+            "canonical": "continue Browse the current webpage on the mobile device",
+            "triggers": [],
+            "contexts": [
+                "chrome.exe",
+                "msedge.exe",
+                "firefox.exe"
+            ],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "RECONNECT_HOSTEL_WIFI": {
+            "keywords": [
+                "I'm back",
+                "switch to desktop",
+                "connect to hostel wifi",
+                "disconnect from phone"
+            ],
+            "canonical": "reconnect the computer to the primary Wi-Fi network",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "DOCUMENT_HANDOFF": {
+            "keywords": [
+                "send this file to my phone",
+                "open this document on my phone"
+            ],
+            "canonical": "transfer the currently viewed document to the mobile device",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "SPOTIFY_HANDOFF": {
+            "keywords": [
+                "switch music to my phone",
+                "continue spotify on my phone",
+                "spotify handoff"
+            ],
+            "canonical": "transfer spotify playback to the mobile device",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "HEADSET_HANDOFF": {
+            "keywords": [
+                "switch my headset to my phone",
+                "connect my headphones to my phone",
+                "headset handoff"
+            ],
+            "canonical": "transfer the bluetooth headset connection to the mobile device",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
         }
     },
     "sites": {

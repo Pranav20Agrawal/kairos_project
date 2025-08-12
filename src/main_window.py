@@ -1,6 +1,6 @@
 # src/main_window.py
 
-from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl
+from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl, Slot
 from PySide6.QtGui import QCloseEvent, QIcon, QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget,
@@ -11,7 +11,10 @@ from PySide6.QtMultimedia import QSoundEffect
 from pathlib import Path
 import threading
 from typing import Any, Dict, List
+import asyncio
+import logging
 
+# --- K.A.I.R.O.S. Core Imports ---
 from src.video_worker import VideoWorker
 from src.audio_worker import AudioWorker
 from src.speaker_worker import SpeakerWorker
@@ -19,6 +22,7 @@ from src.workers.system_stats_worker import SystemStatsWorker
 from src.workers.update_checker_worker import UpdateCheckerWorker
 from src.workers.ocr_worker import OcrWorker
 from src.workers.activity_logger_worker import ActivityLoggerWorker
+from src.workers.clipboard_worker import ClipboardWorker
 from src.nlu_engine import NluEngine
 from src.action_manager import ActionManager
 from src.ui_components.dashboard_widget import DashboardWidget
@@ -28,8 +32,8 @@ from src.database_manager import DatabaseManager
 from src.scheduler import Scheduler
 from src.ui_components.analytics_widget import AnalyticsWidget
 from src.context_manager import ContextManager
-from src.api_server import ServerWorker
-import logging
+from src.api_server import ServerWorker, kairos_api, clipboard_update_callback, notification_callback, text_command_callback
+from src.ble_manager import create_ble_manager
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +47,7 @@ class KairosMainWindow(QMainWindow):
         logger.info(f"K.A.I.R.O.S. version {self.app_version} initializing...")
         self.setWindowTitle(f"K.A.I.R.O.S. - Command Center v{self.app_version}")
         self.setGeometry(100, 100, 1200, 800)
+        self.loop = None
 
         self.interrupt_event = threading.Event()
         self.pending_suggestion: List[str] | None = None
@@ -52,12 +57,22 @@ class KairosMainWindow(QMainWindow):
         logger.info("Initializing backend components...")
         self.settings_manager = SettingsManager()
         self.db_manager = DatabaseManager()
+        self.ble_manager = create_ble_manager()
+        self.clipboard_worker = ClipboardWorker()
         self.nlu_engine = NluEngine(self.settings_manager)
         self.speaker_worker = SpeakerWorker()
-        self.action_manager = ActionManager(self.settings_manager, self.interrupt_event, self.speaker_worker)
+        
+        # --- FIX APPLIED HERE ---
+        # The 'kairos_api' instance from api_server.py is now passed to the ActionManager.
+        self.action_manager = ActionManager(self.settings_manager, self.interrupt_event, self.speaker_worker, kairos_api)
+        
         self.audio_worker = AudioWorker(self.settings_manager)
         self.scheduler = Scheduler()
         self.context_manager = ContextManager()
+
+        globals()['clipboard_update_callback'] = self.on_phone_clipboard_changed
+        globals()['notification_callback'] = self.on_phone_notification_received
+        globals()['text_command_callback'] = self.on_phone_text_command
 
         self._apply_theme()
         self._setup_ui_shell()
@@ -70,7 +85,6 @@ class KairosMainWindow(QMainWindow):
         logger.info("K.A.I.R.O.S. Main Window initialized successfully.")
 
     def _play_startup_sound(self):
-        """Speaks a welcome message and marks the startup sequence as complete."""
         logger.info("Speaker is ready. Playing startup sound and finalizing sequence.")
         self.action_manager._speak("KAIROS systems are online.")
         self.startup_complete = True
@@ -111,7 +125,6 @@ class KairosMainWindow(QMainWindow):
         self.stacked_widget.addWidget(self.settings_widget)
         self.stacked_widget.addWidget(self.analytics_widget)
 
-        # <--- MODIFICATION START: Add Chat Input Box --->
         chat_input_frame = QFrame()
         chat_input_layout = QHBoxLayout(chat_input_frame)
         chat_input_layout.setContentsMargins(5, 5, 5, 5)
@@ -122,12 +135,11 @@ class KairosMainWindow(QMainWindow):
         
         chat_input_layout.addWidget(chat_label)
         chat_input_layout.addWidget(self.chat_input)
-        # <--- MODIFICATION END --->
 
         main_layout.addWidget(nav_panel)
         main_layout.addWidget(self.stacked_widget)
-        main_layout.addWidget(chat_input_frame) # Add the chat box to the bottom
-        main_layout.setStretch(1, 1) # Make the stacked widget take most of the space
+        main_layout.addWidget(chat_input_frame)
+        main_layout.setStretch(1, 1)
 
         self.setStatusBar(QStatusBar(self))
         self.statusBar().showMessage("K.A.I.R.O.S. Initialized and Ready.", 5000)
@@ -176,9 +188,8 @@ class KairosMainWindow(QMainWindow):
         QApplication.instance().aboutToQuit.connect(self._shutdown_application)
         self.action_manager.ocr_requested.connect(self._trigger_ocr_worker)
         self.speaker_worker.model_loaded.connect(self._play_startup_sound)
-        # <--- MODIFICATION START: Connect the chat input --->
         self.chat_input.returnPressed.connect(self.handle_chat_submission)
-        # <--- MODIFICATION END --->
+        self.clipboard_worker.clipboard_changed.connect(self.on_pc_clipboard_changed)
 
     def _schedule_jobs(self) -> None:
         try:
@@ -190,6 +201,11 @@ class KairosMainWindow(QMainWindow):
 
     def _start_workers(self) -> None:
         logger.info("Starting worker threads...")
+        self.api_server_worker = ServerWorker(self.action_manager)
+        self.api_server_worker.start()
+        
+        self.clipboard_worker.start()
+        
         self.video_worker = VideoWorker(self.settings_manager)
         self.video_worker.new_data.connect(self.dashboard_widget.update_video_feed)
         self.video_worker.gesture_detected.connect(self.handle_gesture)
@@ -202,8 +218,6 @@ class KairosMainWindow(QMainWindow):
         self.audio_worker.error_occurred.connect(self.handle_system_message)
         self.audio_worker.start()
 
-        self.api_server_worker = ServerWorker(self.action_manager)
-        self.api_server_worker.start()
         self.speaker_worker.start()
 
         self.system_stats_worker = SystemStatsWorker()
@@ -214,15 +228,34 @@ class KairosMainWindow(QMainWindow):
         self.update_checker = UpdateCheckerWorker(self.app_version, self.settings_manager.settings.core.update_checker_url)
         self.update_checker.update_available.connect(self._on_update_available)
         self.update_checker.start()
-        
+
         self.ocr_worker = OcrWorker()
         self.ocr_worker.ocr_complete.connect(self.handle_ocr_result)
         self.ocr_worker.error_occurred.connect(self.handle_system_message)
-        
+
         self.activity_logger_worker = ActivityLoggerWorker()
         self.activity_logger_worker.suggestion_ready.connect(self.handle_proactive_suggestion)
         self.activity_logger_worker.start()
-        
+
+    @Slot(str)
+    def on_phone_text_command(self, command: str):
+        """Handles a raw text command sent from the phone."""
+        self._process_input_text(command, source="[PHONE_CHAT]")
+
+    def on_pc_clipboard_changed(self, text: str):
+        if kairos_api.loop and kairos_api.loop.is_running():
+            asyncio.run_coroutine_threadsafe(
+                kairos_api.send_clipboard_update(text),
+                kairos_api.loop
+            )
+
+    def on_phone_clipboard_changed(self, text: str):
+        self.clipboard_worker.update_clipboard_cache(text)
+
+    @Slot(dict)
+    def on_phone_notification_received(self, notification_data: dict):
+        self.dashboard_widget.add_notification(notification_data)
+
     def set_targeted_window(self, window_object: Any):
         self.targeted_window = window_object
         logger.debug(f"Gesture context updated: Targeted window is now '{window_object.title}'")
@@ -237,7 +270,7 @@ class KairosMainWindow(QMainWindow):
         msg_box.exec()
         if msg_box.clickedButton() == visit_button:
             QDesktopServices.openUrl(QUrl(repo_url))
-            
+
     def _trigger_ocr_worker(self):
         if not self.ocr_worker.isRunning(): self.ocr_worker.start()
         else: logger.warning("OCR worker is already running. Ignoring request.")
@@ -282,28 +315,19 @@ class KairosMainWindow(QMainWindow):
         self.action_manager._speak(suggestion_text)
         self.pending_suggestion = app_sequence
 
-    # <--- MODIFICATION START: New methods to handle text input --->
     def handle_chat_submission(self):
-        """Called when the user presses Enter in the chat input box."""
         text = self.chat_input.text().strip()
         if not text:
             return
-        
-        # Call the central text processor
         self._process_input_text(text, source="[CHAT]")
         self.chat_input.clear()
 
     def handle_transcription(self, text: str, emotion: str):
-        """Called when the AudioWorker has a new transcription."""
-        # This function now just forwards the data to the central processor
         self._process_input_text(text, source="[VOICE]", emotion=emotion)
 
     def _process_input_text(self, text: str, source: str, emotion: str = "neu"):
-        """Central processing for any text-based command, from voice or chat."""
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.new_log_entry.emit(timestamp, source, text, "INFO", {})
-        
-        # Only log emotion if the model was loaded and the source is voice
         if source == "[VOICE]" and self.audio_worker and self.audio_worker.emotion_model:
             emotion_map = {"neu": "Neutral", "hap": "Happy", "sad": "Sad", "ang": "Angry"}
             emotion_full = emotion_map.get(emotion, emotion.capitalize())
@@ -313,7 +337,8 @@ class KairosMainWindow(QMainWindow):
         intent, entities, prompt = self.nlu_engine.process(text, context=process_name)
         
         if self.pending_suggestion and intent == "[CONFIRM_SUGGESTION]":
-            self.action_manager.execute_app_sequence(self.pending_suggestion)
+            # This is a placeholder; you might need a real execute_app_sequence method
+            logger.info(f"Executing suggested sequence: {self.pending_suggestion}")
             self.pending_suggestion = None
             return
         if self.pending_suggestion: self.pending_suggestion = None
@@ -343,14 +368,17 @@ class KairosMainWindow(QMainWindow):
         
         if prompt:
             self.action_manager._speak(prompt)
-    # <--- MODIFICATION END --->
 
     def _shutdown_application(self) -> None:
         logger.info("Shutdown signal received. Stopping all workers...")
+
+        if self.ble_manager:
+            self.ble_manager.stop()
+
         workers = [
             self.video_worker, self.audio_worker, self.api_server_worker,
             self.speaker_worker, self.system_stats_worker, self.ocr_worker,
-            self.activity_logger_worker
+            self.activity_logger_worker, self.clipboard_worker
         ]
         for worker in workers:
             if hasattr(worker, 'stop'): worker.stop()

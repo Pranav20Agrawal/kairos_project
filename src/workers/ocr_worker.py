@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 class OcrWorker(QThread):
     """A worker thread to perform OCR on the active window without freezing the UI."""
     
-    ocr_complete = Signal(str)  # Emits the extracted text
+    ocr_complete = Signal   (str)  # Emits the extracted text
     error_occurred = Signal(str, str) # Emits message and level
 
     def __init__(self, parent=None):
