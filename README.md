@@ -154,13 +154,13 @@ graph TD
     DatabaseManager -- "NLU Accuracy Stats" --> HeuristicsTuner
     UpdateChecker -- "New Version Available" --> MainWindow
     UpdateChecker -- "Checks for update.txt" --> GitHub
+    ClipboardWorker -- "Forwards Clipboard Data" --> APIServer
     
     %% Mobile Communication Flow
     DiscoveryWorker -- "Broadcasts PC IP" --> ConnectionService
     APIServer <-- "WebSocket / API Calls" --> ConnectionService
     ConnectionService -- "Handles UI Logic" --> FlutterUI
     NotificationService -- "Forwards Notifications" --> APIServer
-    ClipboardWorker -.-> APIServer %% Simplified Link
 ```
 
 ---
