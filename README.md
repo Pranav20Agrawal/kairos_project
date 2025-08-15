@@ -52,13 +52,13 @@ K.A.I.R.O.S. is built on a decoupled, multi-threaded architecture to ensure the 
 
 ```mermaid
 graph TD
-    %% Define styles for different component types
-    classDef worker fill:#334155,stroke:#50e3c2,stroke-width:2px,color:#fff;
-    classDef core fill:#4a90e2,stroke:#fff,stroke-width:2px,color:#fff;
-    classDef service fill:#475569,stroke:#ccc,stroke-width:1px,color:#fff;
-    classDef data fill:#78716c,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef io fill:#be123c,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef mobile fill:#fce4ec,stroke:#880e4f,stroke-width:2px;
+    %% Define styles for different component types for better readability
+    classDef core fill:#e9f2fc,stroke:#4a90e2,stroke-width:3px,color:#000
+    classDef worker fill:#e6fcf5,stroke:#50e3c2,stroke-width:2px,color:#000
+    classDef service fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#000
+    classDef mobile fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
+    classDef io fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
+    classDef data fill:#f1f0ef,stroke:#78716c,stroke-width:2px,color:#000
 
     %% External Entities
     subgraph External Entities
