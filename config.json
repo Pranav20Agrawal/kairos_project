@@ -410,10 +410,10 @@
         },
         "BROWSER_HANDOFF": {
             "keywords": [
-                "continue this on my phone",
                 "open this on my phone",
+                "continue this on my phone",
                 "send this page to my phone",
-                "switch to phone"
+                "browser handoff"
             ],
             "canonical": "continue Browse the current webpage on the mobile device",
             "triggers": [],
@@ -444,10 +444,12 @@
         },
         "DOCUMENT_HANDOFF": {
             "keywords": [
+                "open this on my phone",
+                "continue this document on my phone",
                 "send this file to my phone",
-                "open this document on my phone"
+                "document handoff"
             ],
-            "canonical": "transfer the currently viewed document to the mobile device",
+            "canonical": "transfer the current document to the mobile device",
             "triggers": [],
             "contexts": [],
             "starts_conversation": false,

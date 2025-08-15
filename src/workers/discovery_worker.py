@@ -43,6 +43,8 @@ class DiscoveryWorker(QThread):
         while self.running:
             try:
                 ip_address = get_local_ip()
+                # --- ADD THIS LINE FOR DEBUGGING ---
+                print(f"[DEBUG] Broadcasting IP: {ip_address}") 
                 message = json.dumps({
                     "kairos_pc": True,
                     "ip": ip_address

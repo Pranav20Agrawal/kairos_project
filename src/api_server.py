@@ -122,6 +122,10 @@ class KairosAPI:
             await websocket.accept()
             self.active_websocket = websocket
             logger.info("Mobile client connected via WebSocket.")
+            # --- ADD THIS LINE ---
+            # Immediately acknowledge the connection to the client
+            await websocket.send_text(json.dumps({"type": "connection_ack"}))
+            # --- END ADDITION ---
             try:
                 while True:
                     data = await websocket.receive_text()

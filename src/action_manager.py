@@ -28,6 +28,10 @@ import importlib.util
 import inspect
 import asyncio
 
+# --- FINAL FIX: Added win32clipboard for robust file path copying ---
+if sys.platform == "win32":
+    import win32clipboard
+
 from src.automations.whatsapp_automation import send_whatsapp_message
 from RestrictedPython import compile_restricted
 from RestrictedPython.Guards import safe_builtins, full_write_guard
@@ -37,6 +41,8 @@ from src import wifi_manager
 from src import file_handler
 from src.spotify_manager import SpotifyManager
 from src import bluetooth_manager
+from src import hotspot_manager
+
 
 logger = logging.getLogger(__name__)
 
@@ -189,104 +195,58 @@ class ActionManager(QObject):
             logger.error(f"Error opening app '{path}': {e}")
     
     def _execute_handoff_sequence(self, handoff_intent: str):
-        PHONE_HOTSPOT_SSID = "KAIROS_HOTSPOT" # You may want to make this configurable later
-        original_wifi = None # Initialize to None
-
         try:
-            self._speak("Initializing symbiotic link. Please wait.")
-            
-            # 1. Store original Wi-Fi state
-            original_wifi = wifi_manager.get_current_connection()
-            if not original_wifi:
-                self._speak("I can't find your current Wi-Fi network. Aborting handoff.")
-                return
+            if not hotspot_manager.is_hotspot_active():
+                self._speak("To create a direct link, I need to activate the mobile hotspot on this PC. Opening settings now.")
+                if not hotspot_manager.open_hotspot_settings():
+                    self._speak("Sorry, I couldn't open the hotspot settings.")
+                    return
+                
+                self._speak("Please enable the mobile hotspot. I will wait for it to become active.")
+                if not hotspot_manager.wait_for_hotspot_activation(timeout_seconds=30):
+                    self._speak("I didn't detect the hotspot being enabled. Please try the command again once it's on.")
+                    return
+                else:
+                    self._speak("Great! Hotspot detected. Give your phone a moment to connect, then please repeat your command.")
+                    return
 
-            # 2. Signal phone to prepare (enable hotspot)
-            if self.api_manager.loop and self.api_manager.loop.is_running():
-                logger.info("Requesting phone to enable hotspot...")
-                asyncio.run_coroutine_threadsafe(
-                    self.api_manager.send_prepare_handoff(),
-                    self.api_manager.loop
-                )
-            else:
-                self._speak("Error: High-speed communication link is not active.")
-                return
-            
-            # Give the phone a moment to turn on its hotspot
-            time.sleep(8) # Increased sleep time to allow for hotspot activation
+            self._speak("Direct link is active. Performing handoff now.")
+            time.sleep(1)
 
-            # 3. Connect PC to the phone's hotspot
-            logger.info(f"Switching PC Wi-Fi to '{PHONE_HOTSPOT_SSID}'...")
-            if not wifi_manager.connect_to_wifi(PHONE_HOTSPOT_SSID):
-                self._speak("I couldn't connect to the mobile hotspot. Aborting.")
-                return # This will trigger the 'finally' block to reconnect
-            
-            self._speak("Link established. Performing handoff.")
+            window_title, process_name = self.context_manager.get_active_window_info()
+            window_title = (window_title or "").lower()
+            process_name = (process_name or "").lower()
 
-            # 4. Execute the specific handoff action
-            if handoff_intent == "[BROWSER_HANDOFF]":
-                self._perform_browser_handoff_action()
-            elif handoff_intent == "[DOCUMENT_HANDOFF]":
+            browser_processes = ["chrome.exe", "msedge.exe", "firefox.exe"]
+
+            if window_title.endswith('.pdf'):
+                logger.info("Window title ends with .pdf. Forcing a document handoff.")
                 self._perform_document_handoff_action()
-            elif handoff_intent == "[SPOTIFY_HANDOFF]":
-                self._perform_spotify_handoff_action()
-            elif handoff_intent == "[HEADSET_HANDOFF]":
-                self._perform_headset_handoff_action()
+            elif process_name in browser_processes:
+                logger.info("Context suggests a browser handoff.")
+                self._perform_browser_handoff_action()
             else:
-                self._speak(f"Handoff for {handoff_intent} is not implemented yet.")
-        
-            self._speak("Handoff complete.")
+                logger.info("Context is not a browser. Defaulting to document handoff.")
+                self._perform_document_handoff_action()
 
         except Exception as e:
             logger.error(f"An error occurred during the handoff sequence: {e}", exc_info=True)
             self._speak("An unexpected error occurred during the transfer.")
 
-        finally:
-            # FAILSAFE: This block runs no matter what happens above.
-            # It ensures we always try to switch back to the original Wi-Fi.
-            if original_wifi and wifi_manager.get_current_connection() != original_wifi:
-                logger.info(f"Failsafe triggered. Reverting Wi-Fi to '{original_wifi}'...")
-                self._speak("Switching back to desktop mode.")
-                if not wifi_manager.connect_to_wifi(original_wifi):
-                    self._speak(f"Warning: I had trouble switching back to your main Wi-Fi.")
-                else:
-                    logger.info("Successfully reverted Wi-Fi connection.")
-
     def _get_page_number_from_screen(self) -> int:
         try:
             active_window = gw.getActiveWindow()
-            if not active_window:
-                return 1
-            
+            if not active_window: return 1
             x, y, width, height = active_window.left, active_window.top, active_window.width, active_window.height
-            region_height = 80 
-            region_width = 300 
-            
-            region = (
-                x + (width - region_width) // 2,
-                y + height - region_height,
-                region_width,
-                region_height
-            )
-
+            region = (x + (width - 300) // 2, y + height - 80, 300, 80)
             screenshot = pyautogui.screenshot(region=region)
             text = pytesseract.image_to_string(screenshot)
-            
             matches = re.findall(r'\b(\d+)\s*(?:/|\bof\b)\s*\d+', text)
-            if matches:
-                page_number = int(matches[0])
-                logger.info(f"OCR extracted page number: {page_number}")
-                return page_number
-
+            if matches: return int(matches[0])
             matches = re.findall(r'\b(\d+)\b', text)
-            if matches:
-                page_number = int(matches[-1])
-                logger.info(f"OCR extracted fallback page number: {page_number}")
-                return page_number
-
+            if matches: return int(matches[-1])
         except Exception as e:
             logger.error(f"Could not extract page number via OCR: {e}")
-
         return 1
     
     def _perform_browser_handoff_action(self):
@@ -294,14 +254,10 @@ class ActionManager(QObject):
             pyautogui.hotkey('alt', 'd'); time.sleep(0.1)
             pyautogui.hotkey('ctrl', 'c'); time.sleep(0.1)
             url = pyperclip.paste()
-
             if url and url.startswith("http"):
                 logger.info(f"Sending URL to mobile: {url}")
                 if self.api_manager.loop:
-                    asyncio.run_coroutine_threadsafe(
-                        self.api_manager.send_browser_handoff(url),
-                        self.api_manager.loop
-                    )
+                    asyncio.run_coroutine_threadsafe(self.api_manager.send_browser_handoff(url), self.api_manager.loop)
             else:
                 self._speak("I couldn't get a valid URL from the browser.")
         except Exception as e:
@@ -309,24 +265,42 @@ class ActionManager(QObject):
             self._speak("Sorry, an error occurred while getting the URL.")
 
     def _perform_document_handoff_action(self):
-        file_path = file_handler.get_active_file_path()
-        if not file_path or not os.path.exists(file_path):
-            self._speak("I couldn't identify the file you have open.")
-            return
+        self._speak("Please select the file and press Control-C. I will check the clipboard in 10 seconds.")
+        time.sleep(10)
+        try:
+            if sys.platform != "win32":
+                self._speak("File handoff from clipboard is only supported on Windows.")
+                return
 
-        page_number = self._get_page_number_from_screen()
-        
-        transfer_thread = threading.Thread(target=self._stream_file, args=(file_path, page_number))
-        transfer_thread.start()
+            win32clipboard.OpenClipboard()
+            file_path = None
+            if win32clipboard.IsClipboardFormatAvailable(win32clipboard.CF_HDROP):
+                data = win32clipboard.GetClipboardData(win32clipboard.CF_HDROP)
+                if data:
+                    file_path = data[0]
+            win32clipboard.CloseClipboard()
+
+            if not file_path:
+                self._speak("I couldn't find a file on the clipboard. Please try the handoff command again.")
+                return
+            
+            logger.info(f"Retrieved file path from clipboard: {file_path}")
+            if not os.path.exists(file_path):
+                self._speak("The file path I found doesn't seem to exist. Handoff cancelled.")
+                return
+            
+            page_number = self._get_page_number_from_screen()
+            transfer_thread = threading.Thread(target=self._stream_file, args=(file_path, page_number))
+            transfer_thread.start()
+        except Exception as e:
+            logger.error(f"Error during document handoff from clipboard: {e}", exc_info=True)
+            self._speak("I ran into an issue trying to access the clipboard. Handoff cancelled.")
 
     def _perform_spotify_handoff_action(self):
         playback_state = self.spotify_manager.get_playback_state()
         if playback_state:
             if self.api_manager.loop:
-                asyncio.run_coroutine_threadsafe(
-                    self.api_manager.send_spotify_handoff(playback_state),
-                    self.api_manager.loop
-                )
+                asyncio.run_coroutine_threadsafe(self.api_manager.send_spotify_handoff(playback_state), self.api_manager.loop)
         else:
             self._speak("I couldn't find a song playing on Spotify.")
     
@@ -335,62 +309,49 @@ class ActionManager(QObject):
         if not headset_name:
             self._speak("I couldn't figure out which headset you're using. Aborting handoff.")
             return
-
         self._speak(f"Switching {headset_name} to your phone.")
         if self.api_manager.loop:
-            asyncio.run_coroutine_threadsafe(
-                self.api_manager.send_headset_handoff(headset_name),
-                self.api_manager.loop
-            )
+            asyncio.run_coroutine_threadsafe(self.api_manager.send_headset_handoff(headset_name), self.api_manager.loop)
 
     def _stream_file(self, file_path: str, page_number: int = 1):
         if not (self.api_manager.loop and self.api_manager.loop.is_running()):
             logger.error("Cannot stream file, asyncio loop is not running.")
             return
-        
         try:
+            self._speak(f"Transferring {os.path.basename(file_path)}.")
             future = asyncio.run_coroutine_threadsafe(
                 self.api_manager.send_file_start(file_path, page_number), self.api_manager.loop
             )
             future.result()
-
             with open(file_path, 'rb') as f:
                 while True:
                     chunk = f.read(65536)
-                    if not chunk:
-                        break
+                    if not chunk: break
                     future = asyncio.run_coroutine_threadsafe(
                         self.api_manager.send_file_chunk(chunk), self.api_manager.loop
                     )
                     future.result()
-            
             future = asyncio.run_coroutine_threadsafe(
                 self.api_manager.send_file_end(), self.api_manager.loop
             )
             future.result()
-
-            self.speaker_worker.speak("File transfer complete.")
-
+            self._speak("File transfer complete.")
         except Exception as e:
             logger.error(f"File streaming failed: {e}", exc_info=True)
-            self.speaker_worker.speak("Sorry, the file transfer failed.")
+            self._speak("Sorry, the file transfer failed.")
 
     def _action_execute_dynamic_task(self, entities: Dict[str, Any]) -> None:
         query = entities.get("query")
         if not self.llm_handler:
             self._speak("The dynamic task handler is not available.")
             return
-
         self._speak(f"Thinking about: {query}")
         plan, script = self.llm_handler.generate_script(query)
-        
         if not script or "error" in script.lower():
             self._speak(f"I was unable to generate a valid plan. The model responded: {script}")
             return
-            
         self._speak(f"My plan is to: {plan}")
         time.sleep(0.5)
-
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Icon.Warning)
         msg_box.setWindowTitle("Confirm Dynamic Action")
@@ -399,16 +360,11 @@ class ActionManager(QObject):
         msg_box.setDetailedText(script)
         msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         msg_box.setDefaultButton(QMessageBox.StandardButton.No)
-        
         reply = msg_box.exec()
-        
         if reply == QMessageBox.StandardButton.Yes:
             self._speak("Executing.")
             try:
-                safe_globals = {
-                    "__builtins__": safe_builtins, "_write_": full_write_guard,
-                    "primitives": primitives
-                }
+                safe_globals = {"__builtins__": safe_builtins, "_write_": full_write_guard, "primitives": primitives}
                 byte_code = compile_restricted(script, filename='<llm_script>', mode='exec')
                 exec(byte_code, safe_globals)
             except Exception as e:
