@@ -19,14 +19,20 @@ from src.context_manager import ContextManager
 from src.settings_manager import SettingsManager
 from src.llm_handler import LlmHandler
 from src.speaker_worker import SpeakerWorker
+from src.personality_manager import PersonalityManager  # <-- ADD THIS IMPORT
 from PySide6.QtWidgets import QMessageBox
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from pathlib import Path
 import threading
 import importlib.util
 import inspect
 import asyncio
+import ollama  # Added for memory query LLM calls
+
+# Forward declaration for type hinting
+if TYPE_CHECKING:
+    from src.memory_manager import MemoryManager
 
 # --- FINAL FIX: Added win32clipboard for robust file path copying ---
 if sys.platform == "win32":
@@ -50,7 +56,7 @@ logger = logging.getLogger(__name__)
 class ActionManager(QObject):
     ocr_requested = Signal()
 
-    def __init__(self, settings_manager: SettingsManager, interrupt_event: threading.Event, speaker_worker: SpeakerWorker, api_manager) -> None:
+    def __init__(self, settings_manager: SettingsManager, interrupt_event: threading.Event, speaker_worker: SpeakerWorker, api_manager, memory_manager: "MemoryManager") -> None:
         super().__init__()
         self.settings_manager: SettingsManager = settings_manager
         self.context_manager: ContextManager = ContextManager()
@@ -58,12 +64,14 @@ class ActionManager(QObject):
         self.speaker_worker = speaker_worker
         self.interrupt_event = interrupt_event
         self.api_manager = api_manager
+        self.memory_manager = memory_manager  # <-- ADDED MEMORY MANAGER
+        self.personality_manager = PersonalityManager(self.settings_manager)  # <-- ADD THIS LINE
         self.last_received_file: Optional[Path] = None
         self.current_emotion: str = "neu"
         self.spotify_manager = SpotifyManager()
 
         try:
-            self.llm_handler = LlmHandler()
+            self.llm_handler = LlmHandler(settings_manager=self.settings_manager)
         except Exception as e:
             logger.error(f"Failed to initialize a component: {e}", exc_info=True)
 
@@ -142,6 +150,11 @@ class ActionManager(QObject):
             "[DOCUMENT_HANDOFF]": self._execute_handoff_sequence,
             "[SPOTIFY_HANDOFF]": self._execute_handoff_sequence,
             "[HEADSET_HANDOFF]": self._execute_handoff_sequence,
+            "[QUERY_MEMORY]": self._action_query_memory,
+            # --- ADD THESE THREE LINES ---
+            "[FEEDBACK_POSITIVE]": self._action_feedback_positive,
+            "[FEEDBACK_NEGATIVE_CONCISE]": self._action_feedback_concise,
+            "[FEEDBACK_NEGATIVE_DETAILED]": self._action_feedback_detailed,
         }
         base_actions.update(self.action_map)
         self.action_map = base_actions
@@ -372,6 +385,70 @@ class ActionManager(QObject):
                 self._speak(f"An error occurred during execution: {e}")
         else:
             self._speak("Action cancelled.")
+
+    def _action_query_memory(self, entities: Dict[str, Any]) -> None:
+        """
+        Handles the [QUERY_MEMORY] intent. Retrieves relevant documents from the
+        vector database and uses the LLM to synthesize an answer.
+        """
+        query = entities.get("entity")
+        if not query:
+            self._speak("I'm sorry, I didn't catch what you wanted me to search for in my memory.")
+            return
+        
+        if not self.memory_manager or not self.llm_handler:
+            self._speak("My memory systems are not available at the moment.")
+            return
+        
+        self._speak(f"Searching my memory for information about {query}...")
+        
+        try:
+            # 1. RETRIEVE: Search the vector DB for the most relevant documents.
+            results = self.memory_manager.query_memory(query_text=query, n_results=5)
+            if not results:
+                self._speak(f"I don't seem to have any memories related to {query}.")
+                return
+            
+            # 2. AUGMENT: Prepare the retrieved documents as context for the LLM.
+            context_documents = "\n".join([f"- {res['document']}" for res in results])
+            personality_suffix = self.llm_handler._get_personality_prompt_suffix()  # <-- GET SUFFIX
+            
+            # 3. GENERATE: Ask the LLM to synthesize an answer based on the context.
+            prompt = (
+                f"You are KAIROS, an AI assistant. You have searched your personal memory database for information related to the user's query. "
+                f"Based *only* on the following retrieved documents, provide a concise, natural language summary that directly answers the user's question.\n\n"
+                f"User's Question: '{query}'\n\n"
+                f"Retrieved Memories:\n{context_documents}\n\n"
+                f"Your Synthesized Answer:"
+                f"{personality_suffix}"  # <-- ADD SUFFIX TO PROMPT
+            )
+            
+            # Use ollama to generate the response
+            response = ollama.generate(model=self.llm_handler.model, prompt=prompt)
+            answer = response['response']
+            
+            logger.info(f"LLM synthesized memory response: {answer}")
+            self._speak(answer)
+            
+        except Exception as e:
+            logger.error(f"Failed to query memory or synthesize answer: {e}", exc_info=True)
+            self._speak("I found some relevant information, but I'm having trouble summarizing it right now.")
+
+    # --- ADD THESE THREE NEW METHODS AT THE END OF THE CLASS ---
+    def _action_feedback_positive(self) -> None:
+        """Handles positive feedback to increase proactivity."""
+        self.personality_manager.adjust_trait("proactivity", 0.05)
+        self._speak("Thanks for the feedback. I'll keep that in mind.")
+
+    def _action_feedback_concise(self) -> None:
+        """Handles feedback to be less verbose."""
+        self.personality_manager.adjust_trait("verbosity", -0.1)
+        self._speak("Understood. I'll be more concise.")
+
+    def _action_feedback_detailed(self) -> None:
+        """Handles feedback to be more verbose."""
+        self.personality_manager.adjust_trait("verbosity", 0.1)
+        self._speak("Okay, I'll provide more detail in the future.")
 
     def _action_analyze_screen(self) -> None: self.ocr_requested.emit()
     def _get_target_window(self, entities: Dict[str, Any] | None = None) -> Any:

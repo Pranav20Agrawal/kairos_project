@@ -484,6 +484,44 @@
             "initial_prompt": null,
             "conversation_state": null,
             "is_high_risk": true
+        },
+        "QUERY_MEMORY": {
+            "keywords": [
+                "what do you remember",
+                "what do you know about",
+                "find what i was reading about",
+                "search my history for"
+            ],
+            "canonical": "search your memory for information on a topic",
+            "triggers": [
+                "what do you remember about",
+                "what do you know about",
+                "tell me what you know about",
+                "search for"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "FEEDBACK_POSITIVE": {
+            "keywords": ["that was good", "perfect", "nice one", "that was helpful"],
+            "canonical": "provide positive feedback on the last action",
+            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
+            "conversation_state": null, "is_high_risk": false
+        },
+        "FEEDBACK_NEGATIVE_CONCISE": {
+            "keywords": ["be more concise", "too long", "too verbose", "be brief"],
+            "canonical": "request that future responses be shorter",
+            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
+            "conversation_state": null, "is_high_risk": false
+        },
+        "FEEDBACK_NEGATIVE_DETAILED": {
+            "keywords": ["give me more detail", "explain more", "be more detailed", "tell me more"],
+            "canonical": "request that future responses be more detailed",
+            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
+            "conversation_state": null, "is_high_risk": false
         }
     },
     "sites": {

@@ -3,6 +3,7 @@
 import cv2
 import mediapipe as mp
 import time
+import numpy as np  # <-- ADDED NUMPY IMPORT
 from enum import Enum
 from collections import deque
 from PySide6.QtCore import QThread, Signal, QObject
@@ -25,9 +26,11 @@ class VideoWorker(QThread):
     gesture_detected = Signal(str, object)
     error_occurred = Signal(str, str)
     state_changed = Signal(str)
-    # <--- MODIFICATION START: Added the missing signal back to fix the crash --->
     window_targeted = Signal(object)
-    # <--- MODIFICATION END --->
+    
+    # --- ADDED THIS NEW SIGNAL ---
+    video_stats_updated = Signal(dict)
+    # --- END OF NEW SIGNAL ---
 
     # Tuning parameters
     GESTURE_BUFFER_SIZE = 5
@@ -38,6 +41,7 @@ class VideoWorker(QThread):
     
     VOLUME_DISTANCE_THRESHOLD = 0.015 # Sensitivity for spread/pinch movement
     VOLUME_CONTROL_TIMEOUT = 2.0   # How long to stay in volume mode without a pinch
+    CALCULATION_INTERVAL_MS = 500  # Interval for emitting video stats
 
     def __init__(
         self, settings_manager: SettingsManager, parent: QObject | None = None
@@ -53,6 +57,11 @@ class VideoWorker(QThread):
         
         self.volume_control_ref_dist: Optional[float] = None
         self.last_pinch_time: float = 0.0
+
+        # --- ADDED THESE NEW PROPERTIES ---
+        self.head_pose_buffer = deque(maxlen=15)  # Buffer to calculate stability
+        self.last_video_stats_emit_time = 0
+        # --- END OF NEW PROPERTIES ---
 
     def _update_stable_gesture(self) -> None:
         """Analyzes the gesture buffer to find a stable gesture."""
@@ -73,7 +82,19 @@ class VideoWorker(QThread):
         logger.info("VideoWorker thread started.")
         try:
             mp_hands = mp.solutions.hands
+            # --- ADDED MEDIAPIPE FACE MESH ---
+            mp_face_mesh = mp.solutions.face_mesh
+            # --- END OF ADDITION ---
+            
             hands = mp_hands.Hands(min_detection_confidence=0.75, min_tracking_confidence=0.75, max_num_hands=1)
+            # --- INITIALIZED FACE MESH ---
+            face_mesh = mp_face_mesh.FaceMesh(
+                max_num_faces=1,
+                refine_landmarks=True,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5
+            )
+            # --- END OF INITIALIZATION ---
             mp_drawing = mp.solutions.drawing_utils
         except Exception as e:
             self.error_occurred.emit(f"Could not initialize MediaPipe: {e}", "CRITICAL")
@@ -102,27 +123,63 @@ class VideoWorker(QThread):
                     time.sleep(2); continue
 
                 small_frame_rgb = cv2.cvtColor(cv2.flip(frame, 1), cv2.COLOR_BGR2RGB)
-                results = hands.process(small_frame_rgb)
+                
+                # --- CHANGED: Process for both hands and face ---
+                hand_results = hands.process(small_frame_rgb)
+                face_results = face_mesh.process(small_frame_rgb)
+                # --- END OF CHANGE ---
+
                 display_frame = cv2.flip(frame, 1)
 
+                # --- EXISTING HAND PROCESSING LOGIC ---
                 current_frame_gesture: str | None = None
                 hand_landmarks = None
                 handedness = 'Right' # Default
-                if results.multi_hand_landmarks:
+                if hand_results.multi_hand_landmarks:
                     no_hand_counter = 0
-                    hand_landmarks = results.multi_hand_landmarks[0]
-                    if results.multi_handedness:
-                        handedness = results.multi_handedness[0].classification[0].label
+                    hand_landmarks = hand_results.multi_hand_landmarks[0]
+                    if hand_results.multi_handedness:
+                        handedness = hand_results.multi_handedness[0].classification[0].label
                     mp_drawing.draw_landmarks(display_frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
                     current_frame_gesture = self.classifier.classify(hand_landmarks, handedness)
                 else:
                     no_hand_counter += 1
+                # --- END OF EXISTING HAND LOGIC ---
+
+                # --- ADDED NEW FACE PROCESSING AND STABILITY LOGIC ---
+                head_stability = 0.0
+                if face_results.multi_face_landmarks:
+                    face_landmarks = face_results.multi_face_landmarks[0]
+                    
+                    # We use the nose tip (landmark 1) as a stable reference point
+                    nose_tip = face_landmarks.landmark[1]
+                    self.head_pose_buffer.append(np.array([nose_tip.x, nose_tip.y, nose_tip.z]))
+
+                    # If buffer is full, calculate stability
+                    if len(self.head_pose_buffer) == self.head_pose_buffer.maxlen:
+                        # Calculate the standard deviation of the positions in the buffer.
+                        # Low deviation means a stable head.
+                        std_dev = np.std(self.head_pose_buffer, axis=0)
+                        # We use the inverse of the deviation's magnitude as our stability score
+                        magnitude = np.linalg.norm(std_dev)
+                        head_stability = 1.0 - min(magnitude * 10, 1.0) # Multiply by 10 to make it sensitive
+                else:
+                    # If no face is detected, reset the buffer and stability is 0
+                    self.head_pose_buffer.clear()
+                    head_stability = 0.0
+
+                # Periodically emit the video stats
+                if time.time() - self.last_video_stats_emit_time > (self.CALCULATION_INTERVAL_MS / 1000):
+                    stats = {"timestamp": time.time(), "head_stability": head_stability}
+                    self.video_stats_updated.emit(stats)
+                    self.last_video_stats_emit_time = time.time()
+                # --- END OF NEW FACE LOGIC ---
 
                 self.gesture_buffer.append(current_frame_gesture)
                 self._update_stable_gesture()
                 status_text = f"STATE: {state.name}"
 
-                # --- NEW STATE MACHINE FOR "PINCH & SPREAD" VOLUME ---
+                # --- STATE MACHINE FOR "PINCH & SPREAD" VOLUME ---
                 if state == GestureState.COOLDOWN and time.time() > cooldown_timestamp + self.COOLDOWN_DURATION:
                     state = GestureState.IDLE
 
@@ -192,6 +249,9 @@ class VideoWorker(QThread):
                 if self.stable_gesture:
                     cv2.putText(display_frame, f"GESTURE: {self.stable_gesture}", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 255), 2, cv2.LINE_AA)
                 
+                # Display head stability on screen
+                cv2.putText(display_frame, f"HEAD STABILITY: {head_stability:.2f}", (50, 150), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2, cv2.LINE_AA)
+                
                 self.new_data.emit(display_frame)
 
             except Exception as e:
@@ -201,6 +261,7 @@ class VideoWorker(QThread):
 
         if cap: cap.release()
         hands.close()
+        face_mesh.close()  # <-- CLEAN UP FACE MESH
         logger.info("VideoWorker thread finished.")
 
     def stop(self) -> None:

@@ -3,6 +3,19 @@
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 
+# --- ADD THE NEW PERSONALITY MODEL ---
+class PersonalityModel(BaseModel):
+    verbosity: float = Field(0.5, ge=0.0, le=1.0, description="Controls response length. 0.0 is very concise, 1.0 is very detailed.")
+    formality: float = Field(0.5, ge=0.0, le=1.0, description="Controls tone. 0.0 is casual, 1.0 is very formal.")
+    proactivity: float = Field(0.5, ge=0.0, le=1.0, description="Controls how often KAIROS makes unsolicited suggestions.")
+
+# --- ADD THE NEW GOAL MODEL ---
+class Goal(BaseModel):
+    name: str = Field(description="The name of the goal.")
+    deadline: Optional[str] = Field(None, description="The deadline for the goal, in YYYY-MM-DD format.")
+    keywords: List[str] = Field(default_factory=list, description="Keywords to associate with this goal for context detection.")
+    status: str = Field("Active", description="The current status of the goal (e.g., Active, Completed).")
+
 class CoreSettings(BaseModel):
     camera_index: int = Field(0, ge=0, description="The index of the camera to use (0 is default).")
     fist_threshold: float = Field(0.08, ge=0.0, le=1.0, description="Sensitivity for fist gesture detection.")
@@ -62,3 +75,5 @@ class SettingsModel(BaseModel):
     intents: Dict[str, Intent] = Field(default_factory=dict)
     sites: Dict[str, str] = Field(default_factory=dict)
     macros: Dict[str, List[MacroStep]] = Field(default_factory=dict)
+    goals: Dict[str, Goal] = Field(default_factory=dict, description="User-defined long-term goals.")  # <-- ADD THIS LINE
+    personality: PersonalityModel = Field(default_factory=PersonalityModel, description="Adaptive personality traits of the AI.")  # <-- ADD THIS LINE

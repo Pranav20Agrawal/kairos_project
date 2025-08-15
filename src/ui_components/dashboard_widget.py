@@ -18,6 +18,7 @@ from typing import Any, Dict
 from .widgets.system_stats_widget import SystemStatsWidget
 from .widgets.weather_widget import WeatherWidget
 from .widgets.notification_widget import NotificationWidget
+from .widgets.goal_memory_widget import GoalMemoryWidget  # <-- ADD THIS IMPORT
 
 logger = logging.getLogger(__name__)
 
@@ -28,60 +29,73 @@ class DashboardWidget(QWidget):
         self.db_manager = db_manager
         self.log_data_map: dict[int, Any] = {}
         
+        # This dictionary maps widget keys to their class constructors.
+        # It's our palette of available tools for the generative UI.
         self.available_widgets = {
             "SYSTEM_STATS": SystemStatsWidget,
             "WEATHER": WeatherWidget,
+            "VIDEO_FEED": self._create_video_feed,
+            "COMMAND_LOG": self._create_command_log,
+            "NOTIFICATIONS": self._create_notifications_panel,
+            "GOAL_MEMORY": GoalMemoryWidget,  # <-- ADD THIS NEW WIDGET
         }
         
         self.loaded_widgets: Dict[str, QWidget] = {}
         self.main_layout = QGridLayout(self)
-        self._setup_ui()
+        
+        # Load the default layout from settings on startup
+        self.update_layout(self.settings_manager.settings.dashboard.widgets)
         
         self.settings_manager.settings_updated.connect(self._reload_ui)
 
-    def _setup_ui(self) -> None:
-        logger.info("Setting up dynamic dashboard UI...")
-        dashboard_config = self.settings_manager.settings.dashboard.widgets
+    def clear_layout(self):
+        """Removes all widgets from the dashboard layout."""
+        for widget in self.loaded_widgets.values():
+            self.main_layout.removeWidget(widget)
+            widget.deleteLater()
+        self.loaded_widgets.clear()
+
+    @Slot(dict)
+    def update_layout(self, layout_config: Dict[str, Any]):
+        """Clears the current dashboard and rebuilds it based on a new layout config."""
+        logger.info("Updating dashboard layout...")
+        self.clear_layout()
         
-        self_widgets = {
-            "VIDEO_FEED": self._create_video_feed,
-            "COMMAND_LOG": self._create_command_log,
-            "NOTIFICATIONS": self._create_notifications_panel # <-- ADDED
-        }
-        
-        for widget_key, config in dashboard_config.items():
-            if not config.enabled:
+        for widget_key, config_data in layout_config.items():
+            # In Pydantic v2, we need to handle the data correctly
+            config = config_data if isinstance(config_data, dict) else config_data.model_dump()
+            if not config.get("enabled", False):
                 continue
 
-            widget_instance = None
-            if widget_key in self_widgets:
-                widget_instance = self_widgets[widget_key]()
-            elif widget_key in self.available_widgets:
-                widget_class = self.available_widgets[widget_key]
-                widget_instance = widget_class(self)
-            
-            if widget_instance:
-                self.main_layout.addWidget(
-                    widget_instance,
-                    config.row, config.col,
-                    config.row_span, config.col_span
-                )
-                self.loaded_widgets[widget_key] = widget_instance
-                logger.debug(f"Loaded widget '{widget_key}' at ({config.row}, {config.col})")
+            widget_constructor = self.available_widgets.get(widget_key)
+            if not widget_constructor:
+                logger.warning(f"Widget key '{widget_key}' in layout but no corresponding class found.")
+                continue
+
+            # Handle different widget constructor types
+            if callable(widget_constructor):
+                if widget_key in ["SYSTEM_STATS", "WEATHER", "GOAL_MEMORY"]:
+                    # These are class constructors that need a parent
+                    widget_instance = widget_constructor(self)
+                else:
+                    # These are method references that return widgets
+                    widget_instance = widget_constructor()
             else:
-                logger.warning(f"Widget key '{widget_key}' in config but no corresponding class found.")
+                logger.error(f"Widget constructor for '{widget_key}' is not callable.")
+                continue
+            
+            self.main_layout.addWidget(
+                widget_instance,
+                config["row"], config["col"],
+                config["row_span"], config["col_span"]
+            )
+            self.loaded_widgets[widget_key] = widget_instance
+            logger.debug(f"Loaded widget '{widget_key}' at ({config['row']}, {config['col']})")
 
     def _reload_ui(self):
+        """Legacy method to maintain compatibility with existing settings update connections."""
         logger.info("Reloading dashboard UI due to settings change.")
-        # Clear all widgets from the layout by deleting them
-        while self.main_layout.count():
-            item = self.main_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-        self.loaded_widgets.clear()
-        self._setup_ui()
+        self.update_layout(self.settings_manager.settings.dashboard.widgets)
 
     def _create_video_feed(self) -> QWidget:
         self.video_label = QLabel("Initializing Camera...")
