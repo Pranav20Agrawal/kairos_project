@@ -52,28 +52,64 @@ K.A.I.R.O.S. is built on a decoupled, multi-threaded architecture to ensure the 
 
 ```mermaid
 graph TD
-    subgraph KAIROS PC Application
-        A[Main UI - PySide6] <--> B{Action Manager};
+    subgraph "User Interaction Layer"
+        direction LR
+        UI_TEXT[Command Bar]
+        UI_VOICE[Voice Input]
+        UI_GESTURE[Gesture Input]
+        UI_MOBILE[Mobile App]
+    end
 
-        subgraph Workers [12+ Background Workers - QThread]
-            W1[Audio Worker] --> B;
-            W2[Video Worker] --> B;
-            W3[API Server - FastAPI] <--> M;
-            W4[NLU Engine] --> B;
-            W5[Context & Flow Workers] --> B;
-            W6[...] --> B;
+    subgraph "KAIROS Core Application (Desktop)"
+        direction TB
+        
+        subgraph "I/O & Perception Workers"
+            AUDIO[Audio Worker]
+            VIDEO[Video Worker]
+            API[API Server - FastAPI]
         end
 
-        B <--> C[LLM Handler - Ollama];
-        B <--> D[Memory - ChromaDB];
-        B <--> E[Settings & DB];
+        subgraph "Cognitive & Context Workers"
+            CONTEXT[Task Context Worker]
+            FLOW[Flow State Worker]
+            SESSION[Session Analyzer]
+        end
+
+        subgraph "Core Logic"
+            AM{Action Manager}
+            NLU[NLU Engine]
+        end
+
+        subgraph "AI Services (Local)"
+            LLM[LLM Handler - Ollama]
+            MEMORY[Memory Nexus - ChromaDB]
+        end
+        
+        subgraph "Data & Config Layer"
+            DB[(SQLite DB)]
+            CONFIG[(config.json)]
+        end
     end
 
-    subgraph Mobile Companion
-        M[Flutter App]
-    end
+    %% Connections
+    UI_VOICE --> AUDIO
+    UI_GESTURE --> VIDEO
+    UI_TEXT --> NLU
 
-    W3 <-- WebSocket / HTTP --> M;
+    AUDIO --> NLU
+    VIDEO --> AM
+    
+    NLU -- Intent --> AM
+    AM -- Task --> LLM
+    AM -- Query --> MEMORY
+    AM -- Update --> DB
+    AM -- Read --> CONFIG
+    
+    CONTEXT --> AM
+    FLOW --> AM
+    SESSION --> AM
+    
+    API <== WebSocket / HTTP ==> UI_MOBILE
 ```
 
 ---
