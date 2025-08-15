@@ -52,64 +52,115 @@ K.A.I.R.O.S. is built on a decoupled, multi-threaded architecture to ensure the 
 
 ```mermaid
 graph TD
-    subgraph "User Interaction Layer"
+    %% Define styles for different component types
+    classDef worker fill:#334155,stroke:#50e3c2,stroke-width:2px,color:#fff;
+    classDef core fill:#4a90e2,stroke:#fff,stroke-width:2px,color:#fff;
+    classDef service fill:#475569,stroke:#ccc,stroke-width:1px,color:#fff;
+    classDef data fill:#78716c,stroke:#fff,stroke-width:1px,color:#fff;
+    classDef io fill:#be123c,stroke:#fff,stroke-width:1px,color:#fff;
+    classDef mobile fill:#fce4ec,stroke:#880e4f,stroke-width:2px;
+
+    %% External Entities
+    subgraph External Entities
+        User((User<br/>Voice, Gestures,<br/>Text Input)):::io
+        GitHub((GitHub<br/>Version Updates)):::io
+    end
+    
+    %% K.A.I.R.O.S. Mobile Companion
+    subgraph Mobile ["K.A.I.R.O.S. Mobile Companion (Flutter)"]
         direction LR
-        UI_TEXT[Command Bar]
-        UI_VOICE[Voice Input]
-        UI_GESTURE[Gesture Input]
-        UI_MOBILE[Mobile App]
+        FlutterUI[Flutter UI<br/>Dashboard, File Transfer]:::mobile
+        ConnectionService[Connection Service<br/>WebSocket + Reconnection]:::mobile
+        NotificationService[Notification Service<br/>Background Listener]:::mobile
     end
 
-    subgraph "KAIROS Core Application (Desktop)"
+    %% K.A.I.R.O.S. Desktop Core
+    subgraph Desktop ["K.A.I.R.O.S. Desktop Core (Python/PySide6)"]
         direction TB
         
-        subgraph "I/O & Perception Workers"
-            AUDIO[Audio Worker]
-            VIDEO[Video Worker]
-            API[API Server - FastAPI]
-        end
-
-        subgraph "Cognitive & Context Workers"
-            CONTEXT[Task Context Worker]
-            FLOW[Flow State Worker]
-            SESSION[Session Analyzer]
-        end
-
-        subgraph "Core Logic"
-            AM{Action Manager}
-            NLU[NLU Engine]
-        end
-
-        subgraph "AI Services (Local)"
-            LLM[LLM Handler - Ollama]
-            MEMORY[Memory Nexus - ChromaDB]
+        %% Perception & I/O Layer
+        subgraph Perception ["Perception & I/O Layer"]
+            direction LR
+            AudioWorker["Audio Worker<br/>VAD, Speaker Verification, Whisper"]:::worker
+            VideoWorker["Video Worker<br/>Gestures & Pose Tracking"]:::worker
+            InputMonitor["Input Monitor<br/>KPM & Mouse Metrics"]:::worker
+            ClipboardWorker["Clipboard Worker<br/>Clipboard Change Detection"]:::worker
+            ActivityLogger["Activity Logger<br/>Active Window Tracking"]:::worker
         end
         
-        subgraph "Data & Config Layer"
-            DB[(SQLite DB)]
-            CONFIG[(config.json)]
+        %% Core Logic & Orchestration
+        subgraph CoreLogic ["Core Logic (The Brain)"]
+            ActionManager{"Action Manager<br/>Central Intent Orchestrator"}:::core
+            NluEngine["NLU Engine<br/>Intent Recognition"]:::service
+            MainWindow["MainWindow<br/>PySide6 UI Thread"]
+        end
+        
+        %% Proactive Intelligence Layer
+        subgraph ProactiveIntel ["Proactive Intelligence Layer"]
+            direction LR
+            TaskContext["Task Context Worker"]:::worker
+            FlowState["Flow State Worker"]:::worker
+            SessionAnalyzer["Session Analyzer"]:::worker
+            HeuristicsTuner["Heuristics Tuner"]:::worker
+        end
+        
+        %% AI, Data & Communication Services
+        subgraph Services ["AI, Data & Communication Services"]
+            direction LR
+            APIServer[(API Server<br/>FastAPI & WebSocket)]:::service
+            DiscoveryWorker["Discovery Worker<br/>UDP Broadcast"]:::worker
+            LLMHandler[(LLM Handler<br/>Ollama/Phi-3 Interface)]:::service
+            MemoryNexus[("Memory Nexus<br/>ChromaDB Vector Store")]:::data
+            SpeakerWorker["Speaker Worker<br/>TTS Synthesis"]:::worker
+            DatabaseManager[("SQLite DB<br/>Feedback & Analytics")]:::data
+            SettingsManager[("Settings Manager<br/>config.json")]:::data
+            UpdateChecker["Update Checker"]:::worker
         end
     end
+    
+    %% --- Define Connections ---
 
-    %% Connections
-    UI_VOICE --> AUDIO
-    UI_GESTURE --> VIDEO
-    UI_TEXT --> NLU
+    %% User Input -> Perception
+    User -- "Voice Commands" --> AudioWorker
+    User -- "Hand Gestures" --> VideoWorker
+    User -- "Keyboard/Mouse Events" --> InputMonitor
+    User -- "Text Commands" --> MainWindow
 
-    AUDIO --> NLU
-    VIDEO --> AM
+    %% Perception -> Core Logic & Proactive Intelligence
+    AudioWorker -- "Transcribed Text" --> NluEngine
+    VideoWorker -- "Gesture Intent" --> ActionManager
+    VideoWorker -- "Head Pose Stats" --> FlowState
+    InputMonitor -- "Activity Metrics" --> FlowState
+    ActivityLogger -- "Active Window Log" --> TaskContext
+    ActivityLogger -- "Action Sequence" --> SessionAnalyzer
     
-    NLU -- Intent --> AM
-    AM -- Task --> LLM
-    AM -- Query --> MEMORY
-    AM -- Update --> DB
-    AM -- Read --> CONFIG
+    %% Core Logic Interactions
+    MainWindow -- "UI Events" --> ActionManager
+    NluEngine -- "Intent & Entities Object" --> ActionManager
+    ActionManager -- "Executes System Actions" --> User
+    ActionManager -- "Speaks to User" --> SpeakerWorker
+    ActionManager -- "Generates Dynamic Task" --> LLMHandler
+    ActionManager -- "Queries/Stores Memories" --> MemoryNexus
+    ActionManager -- "Logs Command/Feedback" --> DatabaseManager
+    ActionManager -- "Reads/Writes Settings" --> SettingsManager
     
-    CONTEXT --> AM
-    FLOW --> AM
-    SESSION --> AM
+    %% Proactive Intelligence -> Core Logic
+    TaskContext -- "User Task Changed (e.g. 'Coding')" --> ActionManager
+    FlowState -- "Flow State Changed (Guardian Mode)" --> ActionManager
+    SessionAnalyzer -- "Macro Suggestion" --> ActionManager
+    HeuristicsTuner -- "User Alert: 'Recommend Retraining'" --> MainWindow
     
-    API <== WebSocket / HTTP ==> UI_MOBILE
+    %% Data & Service Connections
+    DatabaseManager -- "NLU Accuracy Stats" --> HeuristicsTuner
+    UpdateChecker -- "New Version Available" --> MainWindow
+    UpdateChecker -- "Checks for update.txt" --> GitHub
+    
+    %% Mobile Communication Flow
+    DiscoveryWorker -- "Broadcasts PC IP" --> ConnectionService
+    APIServer <-- "WebSocket / API Calls" --> ConnectionService
+    ConnectionService -- "Handles UI Logic" --> FlutterUI
+    NotificationService -- "Forwards Notifications" --> APIServer
+    ClipboardWorker -.-> APIServer %% Simplified Link
 ```
 
 ---
