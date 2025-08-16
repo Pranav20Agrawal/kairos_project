@@ -4,6 +4,7 @@ import webbrowser
 import pyautogui
 import pyperclip
 import string
+import json
 import time
 import os
 import subprocess
@@ -19,7 +20,7 @@ from src.context_manager import ContextManager
 from src.settings_manager import SettingsManager
 from src.llm_handler import LlmHandler
 from src.speaker_worker import SpeakerWorker
-from src.personality_manager import PersonalityManager  # <-- ADD THIS IMPORT
+from src.personality_manager import PersonalityManager
 from PySide6.QtWidgets import QMessageBox
 import logging
 from typing import List, Dict, Any, Optional, TYPE_CHECKING
@@ -28,7 +29,7 @@ import threading
 import importlib.util
 import inspect
 import asyncio
-import ollama  # Added for memory query LLM calls
+import ollama
 
 # Forward declaration for type hinting
 if TYPE_CHECKING:
@@ -49,9 +50,7 @@ from src.spotify_manager import SpotifyManager
 from src import bluetooth_manager
 from src import hotspot_manager
 
-
 logger = logging.getLogger(__name__)
-
 
 class ActionManager(QObject):
     ocr_requested = Signal()
@@ -64,8 +63,8 @@ class ActionManager(QObject):
         self.speaker_worker = speaker_worker
         self.interrupt_event = interrupt_event
         self.api_manager = api_manager
-        self.memory_manager = memory_manager  # <-- ADDED MEMORY MANAGER
-        self.personality_manager = PersonalityManager(self.settings_manager)  # <-- ADD THIS LINE
+        self.memory_manager = memory_manager
+        self.personality_manager = PersonalityManager(self.settings_manager)
         self.last_received_file: Optional[Path] = None
         self.current_emotion: str = "neu"
         self.spotify_manager = SpotifyManager()
@@ -119,6 +118,8 @@ class ActionManager(QObject):
         self.macros = {k.lower(): [step.model_dump() for step in v] for k, v in settings.macros.items()}
         
         base_actions = {
+            "[OPEN_LOCAL_ITEM]": self._action_open_local_item,
+            "[SEARCH_AND_NAVIGATE]": self._action_search_and_navigate,
             "[ANALYZE_SCREEN]": self._action_analyze_screen,
             "[GET_SYSTEM_STATS]": self._action_get_system_stats,
             "[NEXT_DESKTOP]": self._action_next_desktop,
@@ -151,7 +152,6 @@ class ActionManager(QObject):
             "[SPOTIFY_HANDOFF]": self._execute_handoff_sequence,
             "[HEADSET_HANDOFF]": self._execute_handoff_sequence,
             "[QUERY_MEMORY]": self._action_query_memory,
-            # --- ADD THESE THREE LINES ---
             "[FEEDBACK_POSITIVE]": self._action_feedback_positive,
             "[FEEDBACK_NEGATIVE_CONCISE]": self._action_feedback_concise,
             "[FEEDBACK_NEGATIVE_DETAILED]": self._action_feedback_detailed,
@@ -161,15 +161,14 @@ class ActionManager(QObject):
         logger.debug("Action maps reloaded.")
 
     def execute_action(self, intent: str, entities: Dict[str, Any] | None = None, emotion: str | None = None) -> None:
+        # ... (This method is unchanged, keep your existing code)
         self.current_emotion = emotion or "neu"
         logger.info(f"Attempting to execute action for intent: {intent}")
-
         clean_intent = intent.strip("[]").lower()
         if clean_intent in self.macros:
             logger.info(f"Executing macro '{clean_intent}'...")
             self._execute_macro(self.macros[clean_intent])
             return
-
         action_function = self.action_map.get(intent)
         if action_function:
             try:
@@ -189,7 +188,9 @@ class ActionManager(QObject):
 
     def _execute_macro(self, steps: List[Dict[str, str]]) -> None:
         for step in steps:
-            if self.interrupt_event.is_set(): self._speak("Action cancelled."); return
+            if self.interrupt_event.is_set(): 
+                self._speak("Action cancelled."); 
+                return
             action, param = step.get("action"), step.get("param")
             try:
                 if action == "OPEN_APP": self._atomic_open_app(param)
@@ -202,11 +203,130 @@ class ActionManager(QObject):
 
     def _atomic_open_app(self, path: str) -> None:
         try:
-            if sys.platform == "win32": os.startfile(path)
-            else: subprocess.call(["open", path])
+            if sys.platform == "win32": 
+                os.startfile(path)
+            else: 
+                subprocess.call(["open", path])
         except Exception as e:
             logger.error(f"Error opening app '{path}': {e}")
-    
+
+    def _action_open_local_item(self, entities: Dict[str, Any]) -> None:
+        """
+        Uses the system index to find and open any known application, folder, or file.
+        """
+        query = entities.get("entity")
+        if not query:
+            self._speak("I'm sorry, I didn't catch what you wanted to open.")
+            return
+
+        query_lower = query.lower().strip()
+        logger.info(f"LOCAL ITEM REQUEST: Attempting to open '{query_lower}'")
+
+        try:
+            with open("system_index.json", 'r') as f:
+                index = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self._speak("My system index is not available. I can't find local items right now.")
+            return
+        
+        # Strategy 1: Exact match (case-insensitive)
+        applications = index.get("applications", {})
+        for app_name, app_path in applications.items():
+            if query_lower == app_name.lower():
+                self._speak(f"Opening {app_name}.")
+                try:
+                    os.startfile(app_path)
+                    return
+                except Exception as e:
+                    logger.error(f"Failed to startfile '{app_path}': {e}")
+                    self._speak(f"I found {app_name} but failed to open it.")
+                    return
+        
+        folders = index.get("folders", {})
+        if query_lower in folders:
+            folder_path = folders[query_lower]
+            self._speak(f"Opening your {query_lower} folder.")
+            try:
+                os.startfile(folder_path)
+                return
+            except Exception as e:
+                logger.error(f"Failed to open folder '{folder_path}': {e}")
+                self._speak(f"I found your {query_lower} folder but failed to open it.")
+                return
+
+        # Strategy 2: Partial match (fuzzy search)
+        for app_name, app_path in applications.items():
+            if query_lower in app_name.lower():
+                self._speak(f"Opening {app_name}.")
+                try:
+                    os.startfile(app_path)
+                    return
+                except Exception as e:
+                    logger.error(f"Failed to startfile '{app_path}': {e}")
+                    continue # Try the next match if this one fails
+
+        self._speak(f"I'm sorry, I couldn't find '{query}' in my index of your applications or folders.")
+
+    def _action_search_and_navigate(self, entities: Dict[str, Any]) -> None:
+        """
+        Intelligently handles navigation and search commands with robust alias support and URL construction.
+        """
+        query = entities.get("entity")
+        if not query:
+            self._speak("I'm sorry, I didn't catch what you wanted to find.")
+            return
+
+        query_lower = query.lower().strip()
+        logger.info(f"WEB NAVIGATION REQUEST: Processing '{query_lower}'")
+
+        # Strategy 1: Expand aliases
+        aliases = { "lc": "leetcode", "gfg": "geeksforgeeks", "yt": "youtube", "wiki": "wikipedia" }
+        words = query_lower.split()
+        if len(words) > 0 and words[0] in aliases:
+            words[0] = aliases[words[0]]
+            query_lower = " ".join(words)
+            logger.info(f"Expanded alias to: '{query_lower}'")
+
+        # Strategy 2: Handle contextual searches (e.g., "find two sum on leetcode")
+        contextual_match = re.search(r"(.+)\s+on\s+(youtube|leetcode|gfg|geeksforgeeks|github|stackoverflow)", query_lower)
+        if contextual_match:
+            search_term = contextual_match.group(1).strip()
+            platform = contextual_match.group(2).strip()
+            
+            urls = {
+                "youtube": f"https://www.youtube.com/results?search_query={search_term.replace(' ', '+')}",
+                "leetcode": f"https://leetcode.com/problemset/?search={search_term.replace(' ', '%20')}",
+                "gfg": f"https://www.geeksforgeeks.org/search?q={search_term.replace(' ', '%20')}",
+                "geeksforgeeks": f"https://www.geeksforgeeks.org/search?q={search_term.replace(' ', '%20')}",
+                "github": f"https://github.com/search?q={search_term.replace(' ', '+')}",
+                "stackoverflow": f"https://stackoverflow.com/search?q={search_term.replace(' ', '+')}"
+            }
+            if platform in urls:
+                self._speak(f"Searching for {search_term} on {platform}.")
+                webbrowser.open(urls[platform])
+                return
+
+        # Strategy 3: Check site map (phonebook)
+        if query_lower in self.site_map:
+            self._speak(f"Opening {query_lower}.")
+            webbrowser.open(self.site_map[query_lower])
+            return
+            
+        # Strategy 4: Use Regex to find any potential URL
+        url_pattern = re.compile(r'([a-zA-Z0-9-]+\.)+(com|org|in|net|dev|io|ai|gg|tech)\b')
+        url_match = url_pattern.search(query_lower)
+        if url_match:
+            url = url_match.group(0)
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            self._speak(f"Opening {url_match.group(0)}.")
+            webbrowser.open(url)
+            return
+
+        # Strategy 5: FINAL FALLBACK - Google search
+        self._speak(f"I couldn't find a specific site for that, so I'll search the web for {query}.")
+        webbrowser.open(f"https://www.google.com/search?q={query.replace(' ', '+')}")
+
     def _execute_handoff_sequence(self, handoff_intent: str):
         try:
             if not hotspot_manager.is_hotspot_active():
@@ -411,7 +531,7 @@ class ActionManager(QObject):
             
             # 2. AUGMENT: Prepare the retrieved documents as context for the LLM.
             context_documents = "\n".join([f"- {res['document']}" for res in results])
-            personality_suffix = self.llm_handler._get_personality_prompt_suffix()  # <-- GET SUFFIX
+            personality_suffix = self.llm_handler._get_personality_prompt_suffix()
             
             # 3. GENERATE: Ask the LLM to synthesize an answer based on the context.
             prompt = (
@@ -420,7 +540,7 @@ class ActionManager(QObject):
                 f"User's Question: '{query}'\n\n"
                 f"Retrieved Memories:\n{context_documents}\n\n"
                 f"Your Synthesized Answer:"
-                f"{personality_suffix}"  # <-- ADD SUFFIX TO PROMPT
+                f"{personality_suffix}"
             )
             
             # Use ollama to generate the response

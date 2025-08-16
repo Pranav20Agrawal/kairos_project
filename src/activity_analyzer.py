@@ -6,7 +6,7 @@ from PySide6.QtCore import QObject, Signal, Slot, QTimer
 from collections import Counter
 import pandas as pd
 from pathlib import Path
-from typing import List, Tuple, Dict
+from typing import List, Tuple, Dict, TYPE_CHECKING
 
 # Forward declaration for type hinting
 if TYPE_CHECKING:

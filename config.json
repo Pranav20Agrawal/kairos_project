@@ -6,7 +6,7 @@
         "silence_duration": 2.0,
         "silence_threshold": 1,
         "silence_threshold_multiplier": 2.5,
-        "speaker_verification_threshold": 0.55,
+        "speaker_verification_threshold": 0.35,
         "daily_briefing_time": "07:00",
         "setup_complete": true,
         "paranoid_mode_enabled": false,
@@ -18,13 +18,21 @@
     },
     "dashboard": {
         "widgets": {
-            "VIDEO_FEED": {
-                "name": "Video Feed",
+            "START_LISTENING": {
+                "name": "Resource Control",
                 "enabled": true,
                 "row": 0,
                 "col": 0,
                 "row_span": 1,
-                "col_span": 2
+                "col_span": 1
+            },
+            "VIDEO_FEED": {
+                "name": "Video Feed",
+                "enabled": true,
+                "row": 0,
+                "col": 1,
+                "row_span": 2,
+                "col_span": 1
             },
             "SYSTEM_STATS": {
                 "name": "System Monitor",
@@ -37,18 +45,10 @@
             "COMMAND_LOG": {
                 "name": "Command Log",
                 "enabled": true,
-                "row": 1,
-                "col": 1,
-                "row_span": 2,
-                "col_span": 1
-            },
-            "WEATHER": {
-                "name": "Weather",
-                "enabled": false,
                 "row": 2,
                 "col": 0,
                 "row_span": 1,
-                "col_span": 1
+                "col_span": 2
             }
         }
     },
@@ -158,12 +158,7 @@
             "is_high_risk": false
         },
         "SEARCH_WEB": {
-            "keywords": [
-                "search",
-                "find",
-                "look up",
-                "google"
-            ],
+            "keywords": [],
             "canonical": "search the web for information",
             "triggers": [
                 "search for",
@@ -249,7 +244,9 @@
         "SHOW_PROJECT_STATUS": {
             "keywords": [
                 "project status",
-                "status on the project"
+                "status on the project",
+                "project report",
+                "how is the project"
             ],
             "canonical": "show me the current status of the project",
             "triggers": [],
@@ -262,7 +259,10 @@
         "OPEN_PROJECT_FOLDER": {
             "keywords": [
                 "open project",
-                "show me the project files"
+                "show me the project files",
+                "open project folder",
+                "open the project folder",
+                "project folder"
             ],
             "canonical": "open the main project folder",
             "triggers": [],
@@ -292,7 +292,9 @@
             "keywords": [
                 "open the last file",
                 "open what I just sent",
-                "show me the file"
+                "show me the file",
+                "open last received file",
+                "last file"
             ],
             "canonical": "open the last file received from another device",
             "triggers": [],
@@ -506,22 +508,96 @@
             "is_high_risk": false
         },
         "FEEDBACK_POSITIVE": {
-            "keywords": ["that was good", "perfect", "nice one", "that was helpful"],
+            "keywords": [
+                "that was good",
+                "perfect",
+                "nice one",
+                "that was helpful"
+            ],
             "canonical": "provide positive feedback on the last action",
-            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
-            "conversation_state": null, "is_high_risk": false
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
         },
         "FEEDBACK_NEGATIVE_CONCISE": {
-            "keywords": ["be more concise", "too long", "too verbose", "be brief"],
+            "keywords": [
+                "be more concise",
+                "too long",
+                "too verbose",
+                "be brief"
+            ],
             "canonical": "request that future responses be shorter",
-            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
-            "conversation_state": null, "is_high_risk": false
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
         },
         "FEEDBACK_NEGATIVE_DETAILED": {
-            "keywords": ["give me more detail", "explain more", "be more detailed", "tell me more"],
+            "keywords": [
+                "give me more detail",
+                "explain more",
+                "be more detailed",
+                "tell me more"
+            ],
             "canonical": "request that future responses be more detailed",
-            "triggers": [], "contexts": [], "starts_conversation": false, "initial_prompt": null,
-            "conversation_state": null, "is_high_risk": false
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
+        },
+        "SEARCH_AND_NAVIGATE": {
+            "keywords": [],
+            "canonical": "open a website or search for information online",
+            "triggers": [
+                "open",
+                "go to",
+                "search for",
+                "find",
+                "look up",
+                "show me"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "LAUNCH_KAIROS_DEVELOPMENT_ENVIRONMENT": {
+            "keywords": [
+                "launch kairos development environment"
+            ],
+            "canonical": "execute the 'Launch KAIROS Development Environment' workflow",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "OPEN_LOCAL_ITEM": {
+            "keywords": [
+                "launch",
+                "run"
+            ],
+            "canonical": "open a local file, folder, or application",
+            "triggers": [
+                "open",
+                "launch",
+                "run",
+                "show me"
+            ],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
         }
     },
     "sites": {
@@ -542,6 +618,42 @@
                 "action": "OPEN_APP",
                 "param": "spotify"
             }
+        ],
+        "Launch KAIROS Development Environment": [
+            {
+                "action": "OPEN_APP",
+                "param": "chrome.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "chrome.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "explorer.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            }
         ]
+    },
+    "goals": {},
+    "personality": {
+        "verbosity": 0.5,
+        "formality": 0.5,
+        "proactivity": 0.5
     }
 }

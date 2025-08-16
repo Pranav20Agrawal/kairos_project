@@ -23,16 +23,16 @@ from src.workers.ocr_worker import OcrWorker
 from src.workers.activity_logger_worker import ActivityLoggerWorker
 from src.workers.clipboard_worker import ClipboardWorker
 from src.workers.discovery_worker import DiscoveryWorker
-from src.workers.input_monitor_worker import InputMonitorWorker  # <-- ADDED THIS LINE
-from src.workers.flow_state_worker import FlowStateWorker, FlowState  # <-- ADD THIS
-from src.workers.browser_history_worker import BrowserHistoryWorker  # <-- ADD THIS
-from src.workers.task_context_worker import TaskContextWorker  # <-- ADD THIS
-from src.workers.goal_oriented_worker import GoalOrientedWorker  # <-- ADD THIS
-from src.workers.heuristics_tuner import HeuristicsTuner  # <-- ADD THIS
-from src.activity_analyzer import SessionAnalyzer  # --- ADDED THIS LINE ---
+from src.workers.input_monitor_worker import InputMonitorWorker
+from src.workers.flow_state_worker import FlowStateWorker, FlowState
+from src.workers.task_context_worker import TaskContextWorker
+from src.workers.goal_oriented_worker import GoalOrientedWorker
+from src.workers.heuristics_tuner import HeuristicsTuner
+from src.workers.system_indexer_worker import SystemIndexerWorker
+from src.activity_analyzer import SessionAnalyzer
 from src.nlu_engine import NluEngine
-from src.memory_manager import MemoryManager  # <-- ADDED MEMORY MANAGER IMPORT
-from src.llm_handler import LlmHandler  # <-- ADD THIS IMPORT
+from src.memory_manager import MemoryManager
+from src.llm_handler import LlmHandler
 from src.action_manager import ActionManager
 from src.ui_components.dashboard_widget import DashboardWidget
 from src.ui_components.settings_widget import SettingsWidget
@@ -40,7 +40,7 @@ from src.settings_manager import SettingsManager
 from src.database_manager import DatabaseManager
 from src.scheduler import Scheduler
 from src.ui_components.analytics_widget import AnalyticsWidget
-from src.ui_components.goals_widget import GoalsWidget  # <-- ADD THIS
+from src.ui_components.goals_widget import GoalsWidget
 from src.api_server import ServerWorker, kairos_api, clipboard_update_callback, notification_callback, text_command_callback
 from src.ui_components.widgets.command_bar_widget import CommandBarWidget
 
@@ -64,26 +64,35 @@ class KairosMainWindow(QMainWindow):
         self.targeted_window: Any | None = None
         self.startup_complete = False
 
-        logger.info("Initializing backend components...")
+        # === LAZY LOADING STATE TRACKING ===
+        self.video_worker_active = False
+        self.audio_worker_active = False
+        self.heavy_workers_initialized = False
+
+        logger.info("Initializing essential backend components...")
         self.settings_manager = SettingsManager()
         self.db_manager = DatabaseManager()
         self.clipboard_worker = ClipboardWorker()
         self.nlu_engine = NluEngine(self.settings_manager)
-        self.llm_handler = LlmHandler(settings_manager=self.settings_manager)  # <-- UPDATE THIS LINE
-        self.memory_manager = MemoryManager(self.nlu_engine.model)  # <-- ADDED MEMORY MANAGER
+        self.llm_handler = LlmHandler(settings_manager=self.settings_manager)
+        self.session_analyzer = SessionAnalyzer(self.llm_handler)
+        self.memory_manager = MemoryManager(self.nlu_engine.model)
         self.speaker_worker = SpeakerWorker()
         
-        # --- UPDATED ACTION MANAGER WITH MEMORY MANAGER ---
         self.action_manager = ActionManager(
             self.settings_manager, 
             self.interrupt_event, 
             self.speaker_worker, 
             kairos_api, 
-            self.memory_manager  # <-- ADDED MEMORY MANAGER PARAMETER
+            self.memory_manager
         )
         
+        # Initialize lightweight audio worker but don't start it
         self.audio_worker = AudioWorker(self.settings_manager)
         self.scheduler = Scheduler()
+        
+        # Initialize video worker but don't start it
+        self.video_worker = VideoWorker(self.settings_manager)
         
         globals()['clipboard_update_callback'] = self.on_phone_clipboard_changed
         globals()['notification_callback'] = self.on_phone_notification_received
@@ -95,27 +104,13 @@ class KairosMainWindow(QMainWindow):
         self._setup_tray_icon()
         self.connect_signals()
         self._schedule_jobs()
-        self._start_workers()
+        self._start_essential_workers()  # Only start essential workers
 
-        # --- ADD THIS FINAL BLOCK OF CODE ---
-        # It should be after all managers and the dashboard widget are initialized
-        self.goal_oriented_worker = GoalOrientedWorker(
-            settings_manager=self.settings_manager,
-            memory_manager=self.memory_manager,
-            llm_handler=self.action_manager.llm_handler,
-            dashboard=self.dashboard_widget
-        )
-        # This is the final connection that brings the whole system to life
-        if hasattr(self, 'task_context_worker'): # Check if task_context_worker was initialized
-            self.task_context_worker.task_context_changed.connect(self.goal_oriented_worker.on_task_context_changed)
-        # --- END OF FINAL BLOCK ---
-
-        self.command_bar.show()
-        logger.info("K.A.I.R.O.S. Main Window initialized successfully.")
+        logger.info("K.A.I.R.O.S. Main Window initialized successfully in low-power mode.")
 
     def _play_startup_sound(self):
         logger.info("Speaker is ready. Playing startup sound and finalizing sequence.")
-        self.action_manager._speak("KAIROS systems are online.")
+        self.action_manager._speak("KAIROS essential systems are online. Camera and microphone are in standby mode.")
         self.startup_complete = True
 
     def _apply_theme(self) -> None:
@@ -142,33 +137,33 @@ class KairosMainWindow(QMainWindow):
         btn_dashboard = QPushButton("Dashboard")
         btn_settings = QPushButton("Settings")
         btn_analytics = QPushButton("Analytics")
-        btn_goals = QPushButton("Goals")  # <-- ADD THIS BUTTON
+        btn_goals = QPushButton("Goals")
         nav_layout.addWidget(btn_dashboard)
         nav_layout.addWidget(btn_settings)
         nav_layout.addWidget(btn_analytics)
-        nav_layout.addWidget(btn_goals)  # <-- ADD THIS BUTTON TO LAYOUT
+        nav_layout.addWidget(btn_goals)
 
         self.stacked_widget = QStackedWidget()
-        self.dashboard_widget = DashboardWidget(self.settings_manager, self.db_manager)
+        self.dashboard_widget = DashboardWidget(self.settings_manager, self.db_manager, self)
         self.settings_widget = SettingsWidget(self.settings_manager)
         self.analytics_widget = AnalyticsWidget(self.db_manager)
-        self.goals_widget = GoalsWidget(self.settings_manager)  # <-- INSTANTIATE WIDGET
+        self.goals_widget = GoalsWidget(self.settings_manager)
         self.stacked_widget.addWidget(self.dashboard_widget)
         self.stacked_widget.addWidget(self.settings_widget)
         self.stacked_widget.addWidget(self.analytics_widget)
-        self.stacked_widget.addWidget(self.goals_widget)  # <-- ADD WIDGET TO STACK
+        self.stacked_widget.addWidget(self.goals_widget)
         
         main_layout.addWidget(nav_panel)
         main_layout.addWidget(self.stacked_widget)
         main_layout.setStretch(1, 1)
 
         self.setStatusBar(QStatusBar(self))
-        self.statusBar().showMessage("K.A.I.R.O.S. Initialized and Ready.", 5000)
+        self.statusBar().showMessage("K.A.I.R.O.S. Initialized in Low-Power Mode - Camera and Audio on Standby.", 5000)
         
         btn_dashboard.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.dashboard_widget))
         btn_settings.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.settings_widget))
         btn_analytics.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.analytics_widget))
-        btn_goals.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.goals_widget))  # <-- CONNECT BUTTON
+        btn_goals.clicked.connect(lambda: self.stacked_widget.setCurrentWidget(self.goals_widget))
         logger.debug("UI shell setup complete.")
 
     def _init_sound_effects(self) -> None:
@@ -191,13 +186,22 @@ class KairosMainWindow(QMainWindow):
 
     def _setup_tray_icon(self) -> None:
         self.tray_icon = QSystemTrayIcon(QIcon("assets/kairos_icon.png"), self)
-        self.tray_icon.setToolTip("K.A.I.R.O.S. is active.")
+        self.tray_icon.setToolTip("K.A.I.R.O.S. is active in low-power mode.")
         tray_menu = QMenu()
         show_action = QAction("Show Command Center", self)
+        activate_camera_action = QAction("Activate Camera", self)
+        activate_audio_action = QAction("Activate Audio", self)
         quit_action = QAction("Quit K.A.I.R.O.S.", self)
+        
         show_action.triggered.connect(self.show)
+        activate_camera_action.triggered.connect(self.start_video_worker)
+        activate_audio_action.triggered.connect(self.start_audio_worker)
         quit_action.triggered.connect(QApplication.instance().quit)
+        
         tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        tray_menu.addAction(activate_camera_action)
+        tray_menu.addAction(activate_audio_action)
         tray_menu.addSeparator()
         tray_menu.addAction(quit_action)
         self.tray_icon.setContextMenu(tray_menu)
@@ -221,8 +225,17 @@ class KairosMainWindow(QMainWindow):
         except Exception as e:
             logger.error(f"Failed to schedule daily briefing job: {e}", exc_info=True)
 
-    def _start_workers(self) -> None:
-        logger.info("Starting worker threads...")
+    def _start_essential_workers(self) -> None:
+        """
+        PERFORMANCE OPTIMIZATION: Only start essential, lightweight workers.
+        Heavy workers (video, audio, flow state monitoring) are started on-demand.
+        """
+        logger.info("Starting essential worker threads only...")
+        
+        # Essential workers that are lightweight
+        self.system_indexer_worker = SystemIndexerWorker()
+        self.system_indexer_worker.start()
+        
         self.discovery_worker = DiscoveryWorker()
         self.discovery_worker.start()
         
@@ -231,74 +244,172 @@ class KairosMainWindow(QMainWindow):
         
         self.clipboard_worker.start()
         
-        self.video_worker = VideoWorker(self.settings_manager)
-        self.video_worker.new_data.connect(self.dashboard_widget.update_video_feed)
-        self.video_worker.gesture_detected.connect(self.handle_gesture)
-        self.video_worker.error_occurred.connect(self.handle_system_message)
-        self.video_worker.state_changed.connect(self.handle_gesture_state_change)
-        self.video_worker.window_targeted.connect(self.set_targeted_window)
-        self.video_worker.start()
-
-        self.audio_worker.new_transcription_with_emotion.connect(self.handle_transcription)
-        self.audio_worker.error_occurred.connect(self.handle_system_message)
-        self.audio_worker.start()
-
+        # Start speaker worker (essential for feedback)
         self.speaker_worker.start()
 
+        # Lightweight system monitoring
         self.system_stats_worker = SystemStatsWorker()
         if "SYSTEM_STATS" in self.dashboard_widget.loaded_widgets:
             self.system_stats_worker.new_stats.connect(self.dashboard_widget.loaded_widgets["SYSTEM_STATS"].update_stats)
         self.system_stats_worker.start()
 
+        # Update checker (low resource usage)
         self.update_checker = UpdateCheckerWorker(self.app_version, self.settings_manager.settings.core.update_checker_url)
         self.update_checker.update_available.connect(self._on_update_available)
         self.update_checker.start()
 
+        # OCR worker (initialized but not started until needed)
         self.ocr_worker = OcrWorker()
         self.ocr_worker.ocr_complete.connect(self.handle_ocr_result)
         self.ocr_worker.error_occurred.connect(self.handle_system_message)
 
+        # Activity logger (lightweight but essential for context)
         self.activity_logger_worker = ActivityLoggerWorker()
-        self.activity_logger_worker.suggestion_ready.connect(self.handle_proactive_suggestion)
-        # Connect the new activity stats signal for flow state monitoring
+        self.activity_logger_worker.activity_logged.connect(self.session_analyzer.on_activity_logged)
+        self.session_analyzer.suggestion_ready.connect(self.handle_macro_suggestion)
         self.activity_logger_worker.activity_stats_updated.connect(
             lambda stats: logger.debug(f"Activity Stats: {stats}")
         )
         self.activity_logger_worker.start()
-        
-        # --- UPDATED FLOW STATE INTEGRATION BLOCK ---
-        # 1. Start the input monitor
-        self.input_monitor_worker = InputMonitorWorker()
-        self.input_monitor_worker.start()
-        
-        # 2. Start the Flow State brain
-        self.flow_state_worker = FlowStateWorker()
-        
-        # 3. Connect all data streams TO the FlowStateWorker
-        self.input_monitor_worker.new_input_stats.connect(self.flow_state_worker.update_input_stats)
-        self.activity_logger_worker.activity_stats_updated.connect(self.flow_state_worker.update_activity_stats)
-        self.video_worker.video_stats_updated.connect(self.flow_state_worker.update_video_stats)
-        
-        # 4. Connect the final output FROM the FlowStateWorker to our handler
-        self.flow_state_worker.flow_state_changed.connect(self.handle_flow_state_change)
-        self.flow_state_worker.start()
-        # --- END OF FLOW STATE INTEGRATION BLOCK ---
 
-        # --- NEW BROWSER HISTORY WORKER INTEGRATION ---
-        self.browser_history_worker = BrowserHistoryWorker(self.memory_manager)
-        self.browser_history_worker.start()
-        # --- END OF BROWSER HISTORY INTEGRATION ---
-
-        # --- NEW TASK CONTEXT WORKER INTEGRATION ---
+        # Task context worker (lightweight)
         self.task_context_worker = TaskContextWorker()
         self.activity_logger_worker.activity_logged.connect(self.task_context_worker.on_activity_logged)
         self.task_context_worker.task_context_changed.connect(self.handle_task_context_change)
         self.task_context_worker.start()
-        # --- ADD THIS BLOCK ---
+
+        # Heuristics tuner (lightweight)
         self.heuristics_tuner = HeuristicsTuner(self.settings_manager, self.db_manager)
         self.heuristics_tuner.tuning_suggestion_ready.connect(self.handle_tuning_suggestion)
         self.heuristics_tuner.start()
-        # --- END OF NEW BLOCK ---
+
+        logger.info("Essential workers started. Heavy workers (video, audio, flow state) are on standby.")
+
+    def _initialize_heavy_workers(self) -> None:
+        """
+        LAZY LOADING: Initialize heavy workers only when needed.
+        This method is called when either video or audio workers are requested.
+        """
+        if self.heavy_workers_initialized:
+            return
+
+        logger.info("Initializing heavy monitoring workers...")
+
+        # Input monitor for flow state detection
+        self.input_monitor_worker = InputMonitorWorker()
+        self.input_monitor_worker.start()
+        
+        # Flow state worker
+        self.flow_state_worker = FlowStateWorker()
+        
+        # Connect data streams to flow state worker
+        self.input_monitor_worker.new_input_stats.connect(self.flow_state_worker.update_input_stats)
+        self.activity_logger_worker.activity_stats_updated.connect(self.flow_state_worker.update_activity_stats)
+        self.video_worker.video_stats_updated.connect(self.flow_state_worker.update_video_stats)
+        
+        self.flow_state_worker.flow_state_changed.connect(self.handle_flow_state_change)
+        self.flow_state_worker.start()
+
+        # Goal-oriented worker
+        self.goal_oriented_worker = GoalOrientedWorker(
+            settings_manager=self.settings_manager,
+            memory_manager=self.memory_manager,
+            llm_handler=self.action_manager.llm_handler,
+            dashboard=self.dashboard_widget
+        )
+        
+        if hasattr(self, 'task_context_worker'):
+            self.task_context_worker.task_context_changed.connect(self.goal_oriented_worker.on_task_context_changed)
+
+        self.heavy_workers_initialized = True
+        logger.info("Heavy workers initialized successfully.")
+
+    def start_video_worker(self) -> None:
+        """
+        ON-DEMAND ACTIVATION: Start the video worker when explicitly requested.
+        """
+        if self.video_worker_active:
+            logger.info("Video worker is already active.")
+            return
+
+        logger.info("User requested video worker activation. Starting camera...")
+        
+        # Initialize heavy workers if not already done
+        self._initialize_heavy_workers()
+        
+        # Connect video worker signals
+        self.video_worker.new_data.connect(self.dashboard_widget.update_video_feed)
+        self.video_worker.gesture_detected.connect(self.handle_gesture)
+        self.video_worker.error_occurred.connect(self.handle_system_message)
+        self.video_worker.state_changed.connect(self.handle_gesture_state_change)
+        self.video_worker.window_targeted.connect(self.set_targeted_window)
+        
+        # Start the worker
+        self.video_worker.start()
+        self.video_worker_active = True
+        
+        # Update UI status
+        self.statusBar().showMessage("Camera activated - Gesture recognition enabled.", 5000)
+        self.tray_icon.setToolTip("K.A.I.R.O.S. is active - Camera enabled.")
+        
+        # Provide audio feedback
+        self.action_manager._speak("Camera activated. Gesture recognition is now online.")
+
+    def start_audio_worker(self) -> None:
+        """
+        ON-DEMAND ACTIVATION: Start the audio worker when explicitly requested.
+        """
+        if self.audio_worker_active:
+            logger.info("Audio worker is already active.")
+            return
+
+        logger.info("User requested audio worker activation. Starting microphone...")
+        
+        # Initialize heavy workers if not already done
+        self._initialize_heavy_workers()
+        
+        # Connect audio worker signals
+        self.audio_worker.new_transcription_with_emotion.connect(self.handle_transcription)
+        self.audio_worker.error_occurred.connect(self.handle_system_message)
+        
+        # Start the worker
+        self.audio_worker.start()
+        self.audio_worker_active = True
+        
+        # Update UI status
+        self.statusBar().showMessage("Microphone activated - Voice commands enabled.", 5000)
+        self.tray_icon.setToolTip("K.A.I.R.O.S. is active - Microphone enabled.")
+        
+        # Provide audio feedback
+        self.action_manager._speak("Microphone activated. Voice commands are now online.")
+
+    def stop_video_worker(self) -> None:
+        """Stop the video worker to save resources."""
+        if not self.video_worker_active:
+            return
+        
+        logger.info("Stopping video worker to conserve resources...")
+        if hasattr(self.video_worker, 'stop'):
+            self.video_worker.stop()
+        
+        self.video_worker_active = False
+        self.statusBar().showMessage("Camera deactivated - Gesture recognition disabled.", 5000)
+        self.tray_icon.setToolTip("K.A.I.R.O.S. is active - Camera disabled.")
+        self.action_manager._speak("Camera deactivated to conserve resources.")
+
+    def stop_audio_worker(self) -> None:
+        """Stop the audio worker to save resources."""
+        if not self.audio_worker_active:
+            return
+        
+        logger.info("Stopping audio worker to conserve resources...")
+        if hasattr(self.audio_worker, 'stop'):
+            self.audio_worker.stop()
+        
+        self.audio_worker_active = False
+        self.statusBar().showMessage("Microphone deactivated - Voice commands disabled.", 5000)
+        self.tray_icon.setToolTip("K.A.I.R.O.S. is active - Microphone disabled.")
+        self.action_manager._speak("Microphone deactivated to conserve resources.")
 
     @Slot(str, str)
     def handle_tuning_suggestion(self, title: str, message: str):
@@ -311,7 +422,7 @@ class KairosMainWindow(QMainWindow):
         """Presents the LLM's macro suggestion to the user."""
         macro_name = suggestion.get("macro_name", "this workflow")
         goal = suggestion.get("goal", "No goal described.")
-        actions = suggestion.get("actions")  # Get the raw actions
+        actions = suggestion.get("actions")
         
         reply = QMessageBox.question(self,
             "Workflow Suggestion",
@@ -325,14 +436,12 @@ class KairosMainWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             logger.info(f"User accepted suggestion to create macro: '{macro_name}'")
             
-            # --- FINAL LOGIC IMPLEMENTATION ---
             if actions:
                 success = self.settings_manager.create_macro_from_suggestion(macro_name, actions)
                 if success:
                     self.statusBar().showMessage(f"New command '{macro_name}' created successfully!", 5000)
                     self.action_manager._speak(f"Great. I've created the new command, {macro_name}.")
                     
-                    # Log the successful macro creation
                     timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
                     self.new_log_entry.emit(
                         timestamp, 
@@ -359,43 +468,30 @@ class KairosMainWindow(QMainWindow):
         log_message = f"Detected transition to {state} state."
         self.new_log_entry.emit(timestamp, "[BRAIN]", log_message, "INFO", {})
         if state == FlowState.FOCUSED:
-            # Announce that Guardian Mode is active
             self.action_manager._speak("Guardian mode activated. I'll keep you focused.")
-            # TODO: Implement notification silencing logic here
         elif state == FlowState.IDLE:
-            # Announce that Guardian Mode is off
             self.action_manager._speak("Guardian mode deactivated.")
-            # TODO: Implement logic to restore notifications
 
     @Slot(str)
     def handle_task_context_change(self, context: str):
-        """
-        Handles the user's high-level task context changing.
-        This will now trigger the generative UI.
-        """
+        """Handles the user's high-level task context changing."""
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.new_log_entry.emit(timestamp, "[BRAIN]", f"Context changed to {context}", "INFO", {})
         friendly_name = context.replace("TASK_", "").replace("_", " ").title()
         self.action_manager._speak(f"Reconfiguring for {friendly_name}.")
         
-        # --- THIS IS THE NEW GENERATIVE UI LOGIC ---
         if not hasattr(self.action_manager, 'llm_handler') or not self.action_manager.llm_handler:
             logger.warning("LLM Handler not available, cannot generate new layout.")
             return
         
-        # 1. Get the list of available widgets
         available_widget_keys = list(self.dashboard_widget.available_widgets.keys())
-        
-        # 2. Ask the LLM to generate a new layout
         new_layout = self.action_manager.llm_handler.generate_ui_layout(context, available_widget_keys)
         
-        # 3. If the layout is valid, apply it to the dashboard
         if new_layout:
             self.dashboard_widget.update_layout(new_layout)
             logger.info(f"Applied AI-generated layout for context: {context}")
         else:
             logger.error("LLM failed to provide a valid layout. Dashboard remains unchanged.")
-        # --- END OF NEW LOGIC ---
 
     @Slot(str)
     def on_phone_text_command(self, command: str):
@@ -432,8 +528,10 @@ class KairosMainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl(repo_url))
 
     def _trigger_ocr_worker(self):
-        if not self.ocr_worker.isRunning(): self.ocr_worker.start()
-        else: logger.warning("OCR worker is already running. Ignoring request.")
+        if not self.ocr_worker.isRunning(): 
+            self.ocr_worker.start()
+        else: 
+            logger.warning("OCR worker is already running. Ignoring request.")
 
     def handle_ocr_result(self, text: str):
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
@@ -450,8 +548,10 @@ class KairosMainWindow(QMainWindow):
         timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
         self.new_log_entry.emit(timestamp, "[SYSTEM]", message, level.upper(), {})
         self.error_sound.play()
-        if level.upper() == "CRITICAL": QMessageBox.critical(self, "Critical System Error", message)
-        elif level.upper() == "WARNING": self.statusBar().showMessage(f"Warning: {message}", 5000)
+        if level.upper() == "CRITICAL": 
+            QMessageBox.critical(self, "Critical System Error", message)
+        elif level.upper() == "WARNING": 
+            self.statusBar().showMessage(f"Warning: {message}", 5000)
 
     def handle_gesture(self, intent: str, entities: Dict[str, Any] | None = None) -> None:
         logger.info(f"[GESTURE CONFIRMED] Received intent '{intent}' from VideoWorker. Executing action.")
@@ -464,7 +564,8 @@ class KairosMainWindow(QMainWindow):
         self.action_manager.execute_action(intent, entities)
 
     def handle_gesture_state_change(self, state: str) -> None:
-        if state == "PRIMED": self.primed_sound.play()
+        if state == "PRIMED": 
+            self.primed_sound.play()
 
     def handle_proactive_suggestion(self, suggestion_text: str, app_sequence: List[str]):
         if not self.startup_complete:
@@ -494,13 +595,14 @@ class KairosMainWindow(QMainWindow):
         
         if self.pending_suggestion and intent == "[CONFIRM_SUGGESTION]":
             logger.info(f"Executing suggested sequence: {self.pending_suggestion}")
-            # Placeholder for actually executing the sequence
             self.pending_suggestion = None
             return
-        if self.pending_suggestion: self.pending_suggestion = None
+        if self.pending_suggestion: 
+            self.pending_suggestion = None
 
         if not intent:
-            if prompt: self.action_manager._speak(prompt)
+            if prompt: 
+                self.action_manager._speak(prompt)
             return
 
         if intent == "[STOP_ACTION]":
@@ -523,19 +625,32 @@ class KairosMainWindow(QMainWindow):
         logger.info("Shutdown signal received. Stopping all workers...")
         self.command_bar.close()
 
-        workers = [
-            self.video_worker, self.audio_worker, self.api_server_worker,
-            self.speaker_worker, self.system_stats_worker, self.ocr_worker,
-            self.activity_logger_worker, self.clipboard_worker, self.discovery_worker,
-            self.input_monitor_worker, self.flow_state_worker,  # <-- ADDED BOTH WORKERS HERE
-            self.browser_history_worker,  # <-- ADDED BROWSER HISTORY WORKER
-            self.task_context_worker,  # <-- ADDED TASK CONTEXT WORKER
-            self.heuristics_tuner  # <-- ADD THIS LINE
+        # Essential workers
+        essential_workers = [
+            self.api_server_worker, self.speaker_worker, self.system_stats_worker, 
+            self.ocr_worker, self.activity_logger_worker, self.clipboard_worker, 
+            self.discovery_worker, self.task_context_worker, self.heuristics_tuner
         ]
-        for worker in workers:
-            if hasattr(worker, 'stop'): worker.stop()
-        for worker in workers:
-            if hasattr(worker, 'wait'): worker.wait(2000)
+        
+        # Heavy workers (only if they were initialized)
+        heavy_workers = []
+        if self.video_worker_active:
+            heavy_workers.append(self.video_worker)
+        if self.audio_worker_active:
+            heavy_workers.append(self.audio_worker)
+        if self.heavy_workers_initialized:
+            heavy_workers.extend([
+                self.input_monitor_worker, self.flow_state_worker
+            ])
+
+        all_workers = essential_workers + heavy_workers
+        
+        for worker in all_workers:
+            if hasattr(worker, 'stop'): 
+                worker.stop()
+        for worker in all_workers:
+            if hasattr(worker, 'wait'): 
+                worker.wait(2000)
 
         logger.info("Worker threads stopped.")
         self.scheduler.shutdown()
@@ -547,4 +662,4 @@ class KairosMainWindow(QMainWindow):
         event.ignore()
         self.hide()
         self.command_bar.show()
-        self.tray_icon.showMessage("K.A.I.R.O.S.", "Application is still running.", QSystemTrayIcon.MessageIcon.Information, 2000)
+        self.tray_icon.showMessage("K.A.I.R.O.S.", "Application is still running in low-power mode.", QSystemTrayIcon.MessageIcon.Information, 2000)
