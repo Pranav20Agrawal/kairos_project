@@ -30,8 +30,8 @@ class SessionAnalyzer(QObject):
     """
     suggestion_ready = Signal(dict)  # Emits the LLM's suggestion
 
-    SESSION_TIMEOUT_SECONDS = 30 # Inactivity duration to end a session
-    MIN_SESSION_LENGTH = 3       # A session must have at least 3 distinct actions
+    SESSION_TIMEOUT_SECONDS = 120 # Inactivity duration to end a session
+    MIN_SESSION_LENGTH = 3        # A session must have at least 3 distinct actions
 
     def __init__(self, llm_handler: "LlmHandler", parent: QObject | None = None) -> None:
         super().__init__(parent)

@@ -1,6 +1,6 @@
 # src/main_window.py
 
-from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl, Slot
+from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl, Slot, QTimer
 from PySide6.QtGui import QCloseEvent, QIcon, QAction, QDesktopServices
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget,
@@ -41,7 +41,7 @@ from src.database_manager import DatabaseManager
 from src.scheduler import Scheduler
 from src.ui_components.analytics_widget import AnalyticsWidget
 from src.ui_components.goals_widget import GoalsWidget
-from src.api_server import ServerWorker, kairos_api, clipboard_update_callback, notification_callback, text_command_callback
+from src.api_server import ServerWorker, kairos_api
 from src.ui_components.widgets.command_bar_widget import CommandBarWidget
 
 logger = logging.getLogger(__name__)
@@ -64,10 +64,21 @@ class KairosMainWindow(QMainWindow):
         self.targeted_window: Any | None = None
         self.startup_complete = False
 
+        # === SHUTDOWN COORDINATION ===
+        self._shutdown_in_progress = False
+        self._shutdown_timer = QTimer()
+        self._shutdown_timer.setSingleShot(True)
+        self._shutdown_timer.timeout.connect(self._force_shutdown)
+
         # === LAZY LOADING STATE TRACKING ===
         self.video_worker_active = False
         self.audio_worker_active = False
         self.heavy_workers_initialized = False
+
+        # === WORKER REFERENCES FOR PROPER CLEANUP ===
+        self.all_workers = []
+        self.essential_workers = []
+        self.heavy_workers = []
 
         logger.info("Initializing essential backend components...")
         self.settings_manager = SettingsManager()
@@ -94,9 +105,9 @@ class KairosMainWindow(QMainWindow):
         # Initialize video worker but don't start it
         self.video_worker = VideoWorker(self.settings_manager)
         
-        globals()['clipboard_update_callback'] = self.on_phone_clipboard_changed
-        globals()['notification_callback'] = self.on_phone_notification_received
-        globals()['text_command_callback'] = self.on_phone_text_command
+        kairos_api.clipboard_update_callback = self.on_phone_clipboard_changed
+        kairos_api.notification_callback = self.on_phone_notification_received
+        kairos_api.text_command_callback = self.on_phone_text_command
 
         self._apply_theme()
         self._setup_ui_shell()
@@ -234,37 +245,46 @@ class KairosMainWindow(QMainWindow):
         
         # Essential workers that are lightweight
         self.system_indexer_worker = SystemIndexerWorker()
+        self.essential_workers.append(self.system_indexer_worker)
         self.system_indexer_worker.start()
         
         self.discovery_worker = DiscoveryWorker()
+        self.essential_workers.append(self.discovery_worker)
         self.discovery_worker.start()
         
         self.api_server_worker = ServerWorker(self.action_manager)
+        self.essential_workers.append(self.api_server_worker)
         self.api_server_worker.start()
         
+        self.essential_workers.append(self.clipboard_worker)
         self.clipboard_worker.start()
         
         # Start speaker worker (essential for feedback)
+        self.essential_workers.append(self.speaker_worker)
         self.speaker_worker.start()
 
         # Lightweight system monitoring
         self.system_stats_worker = SystemStatsWorker()
+        self.essential_workers.append(self.system_stats_worker)
         if "SYSTEM_STATS" in self.dashboard_widget.loaded_widgets:
             self.system_stats_worker.new_stats.connect(self.dashboard_widget.loaded_widgets["SYSTEM_STATS"].update_stats)
         self.system_stats_worker.start()
 
         # Update checker (low resource usage)
         self.update_checker = UpdateCheckerWorker(self.app_version, self.settings_manager.settings.core.update_checker_url)
+        self.essential_workers.append(self.update_checker)
         self.update_checker.update_available.connect(self._on_update_available)
         self.update_checker.start()
 
         # OCR worker (initialized but not started until needed)
         self.ocr_worker = OcrWorker()
+        self.essential_workers.append(self.ocr_worker)
         self.ocr_worker.ocr_complete.connect(self.handle_ocr_result)
         self.ocr_worker.error_occurred.connect(self.handle_system_message)
 
         # Activity logger (lightweight but essential for context)
         self.activity_logger_worker = ActivityLoggerWorker()
+        self.essential_workers.append(self.activity_logger_worker)
         self.activity_logger_worker.activity_logged.connect(self.session_analyzer.on_activity_logged)
         self.session_analyzer.suggestion_ready.connect(self.handle_macro_suggestion)
         self.activity_logger_worker.activity_stats_updated.connect(
@@ -274,14 +294,19 @@ class KairosMainWindow(QMainWindow):
 
         # Task context worker (lightweight)
         self.task_context_worker = TaskContextWorker()
+        self.essential_workers.append(self.task_context_worker)
         self.activity_logger_worker.activity_logged.connect(self.task_context_worker.on_activity_logged)
         self.task_context_worker.task_context_changed.connect(self.handle_task_context_change)
         self.task_context_worker.start()
 
         # Heuristics tuner (lightweight)
         self.heuristics_tuner = HeuristicsTuner(self.settings_manager, self.db_manager)
+        self.essential_workers.append(self.heuristics_tuner)
         self.heuristics_tuner.tuning_suggestion_ready.connect(self.handle_tuning_suggestion)
         self.heuristics_tuner.start()
+
+        # Update all_workers list
+        self.all_workers = self.essential_workers.copy()
 
         logger.info("Essential workers started. Heavy workers (video, audio, flow state) are on standby.")
 
@@ -297,10 +322,12 @@ class KairosMainWindow(QMainWindow):
 
         # Input monitor for flow state detection
         self.input_monitor_worker = InputMonitorWorker()
+        self.heavy_workers.append(self.input_monitor_worker)
         self.input_monitor_worker.start()
         
         # Flow state worker
         self.flow_state_worker = FlowStateWorker()
+        self.heavy_workers.append(self.flow_state_worker)
         
         # Connect data streams to flow state worker
         self.input_monitor_worker.new_input_stats.connect(self.flow_state_worker.update_input_stats)
@@ -317,9 +344,13 @@ class KairosMainWindow(QMainWindow):
             llm_handler=self.action_manager.llm_handler,
             dashboard=self.dashboard_widget
         )
+        self.heavy_workers.append(self.goal_oriented_worker)
         
         if hasattr(self, 'task_context_worker'):
             self.task_context_worker.task_context_changed.connect(self.goal_oriented_worker.on_task_context_changed)
+
+        # Update all_workers list
+        self.all_workers = self.essential_workers + self.heavy_workers
 
         self.heavy_workers_initialized = True
         logger.info("Heavy workers initialized successfully.")
@@ -336,6 +367,11 @@ class KairosMainWindow(QMainWindow):
         
         # Initialize heavy workers if not already done
         self._initialize_heavy_workers()
+        
+        # Add video worker to heavy workers if not already there
+        if self.video_worker not in self.heavy_workers:
+            self.heavy_workers.append(self.video_worker)
+            self.all_workers.append(self.video_worker)
         
         # Connect video worker signals
         self.video_worker.new_data.connect(self.dashboard_widget.update_video_feed)
@@ -367,6 +403,11 @@ class KairosMainWindow(QMainWindow):
         
         # Initialize heavy workers if not already done
         self._initialize_heavy_workers()
+        
+        # Add audio worker to heavy workers if not already there
+        if self.audio_worker not in self.heavy_workers:
+            self.heavy_workers.append(self.audio_worker)
+            self.all_workers.append(self.audio_worker)
         
         # Connect audio worker signals
         self.audio_worker.new_transcription_with_emotion.connect(self.handle_transcription)
@@ -615,48 +656,44 @@ class KairosMainWindow(QMainWindow):
         log_data = {"log_id": log_id, "original_text": text, "predicted_intent": intent, "predicted_entity": entity_str}
         self.new_log_entry.emit(timestamp, "[BRAIN]", log_content, "INFO", log_data)
         
-        if intent != "[UNKNOWN_INTENT]":
-            self.action_manager.execute_action(intent, entities, emotion=emotion)
-        
-        if prompt:
-            self.action_manager._speak(prompt)
-
     def _shutdown_application(self) -> None:
-        logger.info("Shutdown signal received. Stopping all workers...")
-        self.command_bar.close()
+            """Gracefully stops all worker threads and saves settings."""
+            if self._shutdown_in_progress:
+                return
+            
+            logger.info("Shutdown signal received. Stopping all workers...")
+            self._shutdown_in_progress = True
+            self.command_bar.close()
 
-        # Essential workers
-        essential_workers = [
-            self.api_server_worker, self.speaker_worker, self.system_stats_worker, 
-            self.ocr_worker, self.activity_logger_worker, self.clipboard_worker, 
-            self.discovery_worker, self.task_context_worker, self.heuristics_tuner
-        ]
-        
-        # Heavy workers (only if they were initialized)
-        heavy_workers = []
-        if self.video_worker_active:
-            heavy_workers.append(self.video_worker)
-        if self.audio_worker_active:
-            heavy_workers.append(self.audio_worker)
-        if self.heavy_workers_initialized:
-            heavy_workers.extend([
-                self.input_monitor_worker, self.flow_state_worker
-            ])
+            # Start a failsafe timer. If shutdown takes too long, force quit.
+            self._shutdown_timer.start(5000) # 5-second timeout
 
-        all_workers = essential_workers + heavy_workers
-        
-        for worker in all_workers:
-            if hasattr(worker, 'stop'): 
-                worker.stop()
-        for worker in all_workers:
-            if hasattr(worker, 'wait'): 
-                worker.wait(2000)
+            # Stop all workers
+            for worker in self.all_workers:
+                if hasattr(worker, 'stop'):
+                    worker.stop()
+            
+            # Wait for all threads to finish
+            for worker in self.all_workers:
+                if hasattr(worker, 'wait'):
+                    worker.wait(2000) # Wait up to 2 seconds for each worker
 
-        logger.info("Worker threads stopped.")
-        self.scheduler.shutdown()
-        self.settings_manager.save_settings()
-        self.tray_icon.hide()
-        logger.info("K.A.I.R.O.S. shutdown complete.")
+            logger.info("Worker threads stopped.")
+            
+            self.scheduler.shutdown()
+            self.settings_manager.save_settings()
+            self.tray_icon.hide()
+            
+            self._shutdown_timer.stop() # Cancel the failsafe timer
+            logger.info("K.A.I.R.O.S. shutdown complete.")
+            QApplication.instance().quit()
+
+
+    def _force_shutdown(self) -> None:
+        """Forces the application to exit if graceful shutdown fails."""
+        logger.warning("Graceful shutdown timed out. Forcing exit.")
+        QApplication.instance().quit()
+
 
     def closeEvent(self, event: QCloseEvent) -> None:
         event.ignore()

@@ -43,27 +43,29 @@ class ConnectionService extends ChangeNotifier {
 
   // Retry logic
   int _reconnectAttempts = 0;
-  static const int _maxReconnectAttempts = 10; // Increased for better reliability
+  static const int _maxReconnectAttempts = 10;
   static const List<int> _backoffDelays = [1, 2, 3, 5, 5, 5, 5, 5, 5, 5];
 
   // Timeouts
   Timer? _heartbeatTimer;
   Timer? _connectionTimeoutTimer;
-  static const Duration _connectionTimeout = Duration(seconds: 10); // Increased
+  static const Duration _connectionTimeout = Duration(seconds: 10);
   static const Duration _heartbeatInterval = Duration(seconds: 5);
-  static const Duration _discoveryTimeout = Duration(seconds: 8); // Increased
+  static const Duration _discoveryTimeout = Duration(seconds: 8);
 
   StreamSubscription<Map<String, dynamic>?>? _notificationSubscription;
   Timer? _clipboardTimer;
   String _lastClipboardContent = '';
 
+  // FILE TRANSFER STATE - RACE CONDITION FIX
   File? _outputFile;
   IOSink? _fileSink;
   int _receivedBytes = 0;
   int _totalBytes = 0;
   int _handoffPageNumber = 1;
+  bool _fileTransferActive = false;
+  final List<List<int>> _pendingChunks = []; // Buffer for early chunks
 
-  // Add flag to track hotspot connection attempts
   bool _hasTriedHotspot = false;
 
   // Debug logging properties
@@ -122,7 +124,8 @@ class ConnectionService extends ChangeNotifier {
         _handleDisconnect(reconnect: true);
       }
     } else {
-      _addDebugLog("Cannot send message - not connected. State: $_connectionState");
+      _addDebugLog(
+          "Cannot send message - not connected. State: $_connectionState");
     }
   }
 
@@ -135,7 +138,6 @@ class ConnectionService extends ChangeNotifier {
 
     await _cleanupConnections();
 
-    // Reset hotspot attempt flag on new connection process
     if (_reconnectAttempts == 0) {
       _hasTriedHotspot = false;
     }
@@ -144,7 +146,6 @@ class ConnectionService extends ChangeNotifier {
     _updateStatus("Searching for KAIROS PC...");
     _addDebugLog("=== Starting Connection Process ===");
 
-    // Try hotspot first if we haven't tried it yet, or if we're on a retry
     if (!_hasTriedHotspot || _reconnectAttempts > 2) {
       await _connectToKairosHotspot();
     } else {
@@ -189,7 +190,8 @@ class ConnectionService extends ChangeNotifier {
       _addDebugLog("UDP receiver bound successfully to port 8888");
 
       _discoveryTimer = Timer(_discoveryTimeout, () {
-        _addDebugLog("WiFi discovery timeout after ${_discoveryTimeout.inSeconds}s");
+        _addDebugLog(
+            "WiFi discovery timeout after ${_discoveryTimeout.inSeconds}s");
         if (_connectionState == ConnectionState.discovering) {
           _handleWiFiDiscoveryTimeout();
         }
@@ -275,7 +277,7 @@ class ConnectionService extends ChangeNotifier {
     try {
       String? currentSSID = await WiFiForIoTPlugin.getSSID();
       _addDebugLog("Current SSID: ${currentSSID ?? 'null'}");
-      
+
       if (currentSSID == KAIROS_HOTSPOT_SSID) {
         _addDebugLog("Already connected to KAIROS hotspot");
         _pcIp = KAIROS_HOTSPOT_IP;
@@ -285,23 +287,24 @@ class ConnectionService extends ChangeNotifier {
 
       _addDebugLog("Scanning for available networks...");
       List<WifiNetwork> networks = await WiFiForIoTPlugin.loadWifiList();
-      bool kairosFound = networks.any((network) => network.ssid == KAIROS_HOTSPOT_SSID);
-      
-      _addDebugLog("Available networks: ${networks.map((n) => n.ssid).join(', ')}");
+      bool kairosFound =
+          networks.any((network) => network.ssid == KAIROS_HOTSPOT_SSID);
+
+      _addDebugLog(
+          "Available networks: ${networks.map((n) => n.ssid).join(', ')}");
       _addDebugLog("KAIROS hotspot found in scan: $kairosFound");
 
       if (!kairosFound) {
-        _addDebugLog("KAIROS hotspot not found in scan. Trying WiFi discovery instead.");
+        _addDebugLog(
+            "KAIROS hotspot not found in scan. Trying WiFi discovery instead.");
         await _startWiFiDiscovery();
         return;
       }
 
-      // Forcing a disconnect from the current network can help prioritize the hotspot.
       await WiFiForIoTPlugin.disconnect();
       await Future.delayed(const Duration(seconds: 1));
 
       bool isConnected = false;
-      // Try to connect multiple times for robustness
       for (int i = 0; i < 3; i++) {
         _addDebugLog("Hotspot connection attempt ${i + 1}");
         isConnected = await WiFiForIoTPlugin.connect(
@@ -316,7 +319,7 @@ class ConnectionService extends ChangeNotifier {
       _addDebugLog("Hotspot connection result: $isConnected");
 
       if (isConnected) {
-        await Future.delayed(const Duration(seconds: 2)); // Wait for IP assignment
+        await Future.delayed(const Duration(seconds: 2));
         String? newSSID = await WiFiForIoTPlugin.getSSID();
         _addDebugLog("New SSID after connection: $newSSID");
 
@@ -328,7 +331,8 @@ class ConnectionService extends ChangeNotifier {
           throw Exception("SSID verification failed after connection attempt.");
         }
       } else {
-        throw Exception("Failed to connect to hotspot after multiple attempts.");
+        throw Exception(
+            "Failed to connect to hotspot after multiple attempts.");
       }
     } catch (e) {
       _addDebugLog("Hotspot connection error: $e");
@@ -349,7 +353,8 @@ class ConnectionService extends ChangeNotifier {
     _updateStatus("Establishing secure link...");
 
     _connectionTimeoutTimer = Timer(_connectionTimeout, () {
-      _addDebugLog("WebSocket connection timeout after ${_connectionTimeout.inSeconds}s");
+      _addDebugLog(
+          "WebSocket connection timeout after ${_connectionTimeout.inSeconds}s");
       if (_connectionState == ConnectionState.connecting) {
         _handleDisconnect(reconnect: true);
       }
@@ -363,10 +368,8 @@ class ConnectionService extends ChangeNotifier {
         Uri.parse(wsUrl),
       );
 
-      // Send handshake immediately
       _sendConnectionHandshake();
 
-      // Listen for messages
       _channel!.stream.listen(
         _handleIncomingMessage,
         onDone: () {
@@ -380,12 +383,9 @@ class ConnectionService extends ChangeNotifier {
         cancelOnError: false,
       );
 
-      // Wait a bit for the connection to establish
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (_connectionState == ConnectionState.connecting) {
-        // If we haven't received any message yet, assume connection is good
-        // The PC will send a response that will trigger _establishConnection
         _addDebugLog("WebSocket connected, waiting for PC response");
       }
     } catch (e) {
@@ -412,7 +412,6 @@ class ConnectionService extends ChangeNotifier {
   void _handleIncomingMessage(dynamic message) {
     _addDebugLog("Received message: ${message.toString()}");
 
-    // First message from PC establishes the connection
     if (_connectionState == ConnectionState.connecting) {
       _addDebugLog("First message received, establishing connection");
       _establishConnection();
@@ -445,7 +444,6 @@ class ConnectionService extends ChangeNotifier {
     _reconnectAttempts = 0;
     _updateStatus("✓ Connected! Ready for symbiotic link.");
 
-    // Start heartbeat
     _heartbeatTimer = Timer.periodic(_heartbeatInterval, (timer) {
       if (_connectionState == ConnectionState.connected) {
         _sendHeartbeat();
@@ -481,7 +479,8 @@ class ConnectionService extends ChangeNotifier {
         break;
       case 'clipboard_update':
         final content = data['content'] as String;
-        _addDebugLog("Clipboard update received: ${content.substring(0, 50)}...");
+        _addDebugLog(
+            "Clipboard update received: ${content.substring(0, 50)}...");
         _lastClipboardContent = content;
         Clipboard.setData(ClipboardData(text: content));
         break;
@@ -514,7 +513,8 @@ class ConnectionService extends ChangeNotifier {
 
   void _handleDisconnect({bool reconnect = false}) {
     final wasConnected = _connectionState == ConnectionState.connected;
-    _addDebugLog("Handling disconnect. Was connected: $wasConnected, Will reconnect: $reconnect");
+    _addDebugLog(
+        "Handling disconnect. Was connected: $wasConnected, Will reconnect: $reconnect");
 
     _connectionTimeoutTimer?.cancel();
     _heartbeatTimer?.cancel();
@@ -536,7 +536,7 @@ class ConnectionService extends ChangeNotifier {
       _setConnectionState(ConnectionState.disconnected);
       _updateStatus("Connection failed. Tap refresh to retry.");
       _reconnectAttempts = 0;
-      _hasTriedHotspot = false; // Reset for next manual attempt
+      _hasTriedHotspot = false;
       return;
     }
 
@@ -544,10 +544,12 @@ class ConnectionService extends ChangeNotifier {
     final delay = _backoffDelays[delayIndex];
 
     _setConnectionState(ConnectionState.reconnecting);
-    _updateStatus("Reconnecting... (${_reconnectAttempts + 1}/$_maxReconnectAttempts)");
+    _updateStatus(
+        "Reconnecting... (${_reconnectAttempts + 1}/$_maxReconnectAttempts)");
 
     _reconnectAttempts++;
-    _addDebugLog("Scheduling reconnect in ${delay}s (attempt $_reconnectAttempts)");
+    _addDebugLog(
+        "Scheduling reconnect in ${delay}s (attempt $_reconnectAttempts)");
 
     _reconnectTimer = Timer(Duration(seconds: delay), () {
       if (_connectionState == ConnectionState.reconnecting) {
@@ -572,49 +574,114 @@ class ConnectionService extends ChangeNotifier {
     await _startConnectionProcess();
   }
 
+  // RACE CONDITION FIX: Proper async file initialization with buffering
   Future<void> _handleFileStart(Map<String, dynamic> data) async {
-    final fileName = data['file_name'] as String;
-    _totalBytes = data['file_size'] as int;
+    // Reset all file transfer state at the beginning
+    _fileTransferActive = true;
     _receivedBytes = 0;
+    _totalBytes = 0;
+    _outputFile = null;
+    _fileSink = null;
+    _pendingChunks.clear();
+
+    final fileName = data['file_name'] as String?;
+    final fileSize = data['file_size'] as int?;
     _handoffPageNumber = data['page_number'] as int? ?? 1;
 
-    _addDebugLog("Starting file transfer: $fileName (${_totalBytes} bytes, page $_handoffPageNumber)");
+    if (fileName == null || fileSize == null) {
+      _addDebugLog("Error: Invalid file_start message. Missing name or size.");
+      _fileTransferActive = false;
+      return;
+    }
+
+    _totalBytes = fileSize;
+    _addDebugLog(
+        "File transfer initiated: $fileName ($_totalBytes bytes, page $_handoffPageNumber)");
     _updateStatus("Receiving file: $fileName...");
     notifyListeners();
 
-    final tempDir = await getTemporaryDirectory();
-    _outputFile = File('${tempDir.path}/$fileName');
-    if (await _outputFile!.exists()) {
-      await _outputFile!.delete();
+    try {
+      final tempDir = await getTemporaryDirectory();
+      _outputFile = File('${tempDir.path}/$fileName');
+
+      if (await _outputFile!.exists()) {
+        await _outputFile!.delete();
+      }
+
+      // Open the sink and ONLY THEN process any buffered chunks
+      _fileSink = _outputFile!.openWrite();
+      _addDebugLog("File sink is ready. Processing ${_pendingChunks.length} buffered chunks.");
+
+      // Critical change: Process buffered chunks only after the sink is open
+      for (final chunk in _pendingChunks) {
+        _fileSink?.add(chunk);
+        _receivedBytes += chunk.length;
+      }
+      _pendingChunks.clear();
+      notifyListeners(); // Update UI with progress from buffered chunks
+
+    } catch (e) {
+      _addDebugLog("Error during file start/initialization: $e");
+      _fileTransferActive = false;
+      _fileSink?.close();
     }
-    _fileSink = _outputFile?.openWrite();
-    _addDebugLog("File prepared for writing: ${_outputFile!.path}");
   }
 
+  // RACE CONDITION FIX: Safe chunk handling with buffering
   void _handleFileChunk(List<int> chunk) {
-    if (_fileSink != null) {
+    if (!_fileTransferActive) {
+      _addDebugLog("Chunk received but transfer not active. Discarding.");
+      return;
+    }
+
+    // If the sink isn't ready, buffer the chunk and wait.
+    if (_fileSink == null) {
+      _addDebugLog("Sink not ready. Buffering chunk (${chunk.length} bytes).");
+      _pendingChunks.add(chunk);
+      return;
+    }
+
+    // If sink is ready, write the chunk directly.
+    _fileSink?.add(chunk);
+    _receivedBytes += chunk.length;
+    final progress = (_receivedBytes / _totalBytes * 100).toStringAsFixed(0);
+    _updateStatus("Receiving file... $progress%");
+    notifyListeners();
+  }
+
+  void _writeSingleChunk(List<int> chunk) {
+    try {
       _fileSink!.add(chunk);
       _receivedBytes += chunk.length;
-      final progress = (_receivedBytes / _totalBytes * 100).toStringAsFixed(0);
-      _addDebugLog("Received chunk: ${chunk.length} bytes, total: $_receivedBytes/$_totalBytes ($progress%)");
-      _updateStatus("Receiving file... $progress%");
-      notifyListeners();
-    } else {
-      _addDebugLog("Received file chunk but no file sink available");
+      
+      if (_totalBytes > 0) {
+        final progress = (_receivedBytes / _totalBytes * 100).toStringAsFixed(0);
+        _addDebugLog(
+            "Received chunk: ${chunk.length} bytes, total: $_receivedBytes/$_totalBytes ($progress%)");
+        _updateStatus("Receiving file... $progress%");
+        notifyListeners();
+      }
+    } catch (e) {
+      _addDebugLog("Error writing chunk: $e");
     }
   }
 
   Future<void> _handleFileEnd() async {
-    _addDebugLog("File transfer complete");
+    if (!_fileTransferActive) {
+      _addDebugLog("File end received but transfer not active.");
+      return;
+    }
+
+    _addDebugLog("File transfer finished. Closing file sink.");
+
     await _fileSink?.flush();
     await _fileSink?.close();
-    _updateStatus("File received. Opening...");
+    
+    _updateStatus("File received successfully. Opening...");
     notifyListeners();
 
-    if (_outputFile != null &&
-        await _outputFile!.exists() &&
-        appContext != null) {
-      _addDebugLog("Opening PDF: ${_outputFile!.path} at page $_handoffPageNumber");
+    if (_outputFile != null && await _outputFile!.exists() && appContext != null) {
+      _addDebugLog("Navigating to PDF viewer for ${_outputFile!.path}");
       Navigator.push(
         appContext!,
         MaterialPageRoute(
@@ -625,20 +692,11 @@ class ConnectionService extends ChangeNotifier {
         ),
       );
     } else {
-      _addDebugLog("Cannot open file - file: ${_outputFile?.path}, exists: ${await _outputFile?.exists()}, context: $appContext");
+      _addDebugLog("Failed to open file. Path: ${_outputFile?.path}, Exists: ${await _outputFile?.exists()}, Context: $appContext");
     }
 
-    Future.delayed(const Duration(seconds: 2), () {
-      if (isConnected) {
-        _updateStatus("✓ Connected! Ready for symbiotic link.");
-      }
-    });
-
-    _fileSink = null;
-    _outputFile = null;
-    _totalBytes = 0;
-    _receivedBytes = 0;
-    _handoffPageNumber = 1;
+    // Reset state for the next transfer
+    _fileTransferActive = false;
   }
 
   Future<void> _checkClipboard() async {

@@ -191,6 +191,19 @@ class NluEngine:
         text_lower = text.lower().strip()
         logger.info(f"Processing NLU for: '{text}'")
 
+        # --- NEW CODE BLOCK START ---
+        # PRIORITY 0: Exact keyword matching for unambiguous commands
+        exact_match_intent = self._get_exact_keyword_match(text)
+        if exact_match_intent:
+            intent_data = self.settings_manager.settings.intents.get(exact_match_intent.strip("[]"))
+            entities = None
+            if intent_data and intent_data.triggers:
+                entity_text = self._extract_entity(text, intent_data.triggers)
+                if entity_text:
+                    entities = {"entity": entity_text}
+            return f"[{exact_match_intent}]", entities, None
+        # --- NEW CODE BLOCK END ---
+        
         # --- NEW LOGIC CASCADE ---
 
         # PRIORITY 1: Check for exact keyword match for specific, non-web intents

@@ -20,10 +20,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-clipboard_update_callback = None
-notification_callback = None
-text_command_callback = None
-
 class ActionRequest(BaseModel):
     intent: str
     entity: Optional[str] = None
@@ -40,6 +36,10 @@ class KairosAPI:
         self.action_manager: Optional['ActionManager'] = None
         self.active_websocket: Optional[WebSocket] = None
         self.loop: Optional[asyncio.AbstractEventLoop] = None
+        # MODIFIED: Made these instance attributes
+        self.clipboard_update_callback = None
+        self.notification_callback = None
+        self.text_command_callback = None
         self.setup_routes()
 
     def set_action_manager(self, action_manager: 'ActionManager'):
@@ -122,10 +122,7 @@ class KairosAPI:
             await websocket.accept()
             self.active_websocket = websocket
             logger.info("Mobile client connected via WebSocket.")
-            # --- ADD THIS LINE ---
-            # Immediately acknowledge the connection to the client
             await websocket.send_text(json.dumps({"type": "connection_ack"}))
-            # --- END ADDITION ---
             try:
                 while True:
                     data = await websocket.receive_text()
@@ -138,13 +135,15 @@ class KairosAPI:
                             content = message.get("content", "")
                             logger.info("Received clipboard from mobile. Updating PC clipboard.")
                             pyperclip.copy(content)
-                            if callable(clipboard_update_callback):
-                                clipboard_update_callback(content)
+                            # MODIFIED: Use self. to access the instance attribute
+                            if callable(self.clipboard_update_callback):
+                                self.clipboard_update_callback(content)
                         
                         elif msg_type == "notification_update":
                             logger.info("Received notification from mobile.")
-                            if callable(notification_callback):
-                                notification_callback(message)
+                            # MODIFIED: Use self. to access the instance attribute
+                            if callable(self.notification_callback):
+                                self.notification_callback(message)
                         
                         elif msg_type == "headset_handoff_to_pc":
                             logger.info("Received headset handoff command from mobile.")
@@ -162,8 +161,9 @@ class KairosAPI:
         @self.app.post("/process_text_command")
         def process_text_command(request: TextCommandRequest):
             logger.info(f"API received text command: '{request.command}'")
-            if callable(text_command_callback):
-                text_command_callback(request.command)
+            # MODIFIED: Use self. to access the instance attribute
+            if callable(self.text_command_callback):
+                self.text_command_callback(request.command)
                 return {"status": "success", "message": "Command received for processing."}
             else:
                 logger.error("Text command received but no callback is registered.")
@@ -232,24 +232,19 @@ class ServerWorker(QThread):
         self.server: uvicorn.Server | None = None
 
     def run(self) -> None:
-        # --- FIX APPLIED HERE ---
-        # Create a new event loop for this background thread
         try:
             loop = asyncio.get_running_loop()
-        except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+        except RuntimeError:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
         kairos_api.loop = loop
-        # --- END FIX ---
         
         kairos_api.set_action_manager(self.action_manager)
         config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info", loop="asyncio")
         self.server = uvicorn.Server(config)
         
         logger.info(f"Starting K.A.I.R.O.S. API server on http://{self.host}:{self.port}")
-        # Uvicorn's run is blocking, so it will keep the thread alive.
-        # We run it within the loop context we've established.
         loop.run_until_complete(self.server.serve())
         logger.info("K.A.I.R.O.S. API server has shut down.")
 
