@@ -1,180 +1,113 @@
 # K.A.I.R.O.S. - A Symbiotic AI Desktop Assistant
 
-![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=for-the-badge&logo=python)
-![Flutter](https://img.shields.io/badge/Flutter-3.x-02569B?style=for-the-badge&logo=flutter)
-![PySide6](https://img.shields.io/badge/PySide6-6.9-2796EC?style=for-the-badge&logo=qt)
-![PyTorch](https://img.shields.io/badge/PyTorch-2.7-EE4C2C?style=for-the-badge&logo=pytorch)
-![License](https://img.shields.io/badge/License-MIT-yellow.svg?style=for-the-badge)
-
-**K.A.I.R.O.S. (Kinetic Artificial Intelligence for Responsive & Organic Systems)** is a context-aware, multi-modal AI desktop assistant designed to create a symbiotic link between your PC and mobile devices, proactively assisting in workflows and automating tasks.
-
----
-
-![KAIROS Demo Placeholder](https://user-images.githubusercontent.com/26833433/126934442-53b3386e-578f-4330-975a-c603b54a2de1.png)
-_A placeholder for your awesome project demo!_
-
----
+**K.A.I.R.O.S.** (Kinetic Artificial Intelligence for Responsive & Organic Systems) is a context-aware, multi-modal AI desktop assistant designed to create a symbiotic link between your PC and mobile device, proactively assisting in workflows and automating tasks.
 
 ## Core Concept 🧠
 
-K.A.I.R.O.S. is not just another voice assistant. It's an **ambient computing experiment** built on a local-first philosophy. It observes your workflow, understands your context, and anticipates your needs without constantly sending your data to the cloud. By linking your desktop and mobile device, it aims to erase the boundary between your main workstation and your handheld companion.
-
----
+K.A.I.R.O.S. is not just another voice assistant. It's a proactive computing system built on a local-first philosophy. It observes your workflow using background workers, understands your context (e.g., "coding" vs "browsing"), and anticipates your needs without constantly sending your data to the cloud. By linking your desktop and mobile device, it aims to erase the boundary between your main workstation and your handheld companion.
 
 ## Key Features ✨
 
-* **🗣️ Multi-Modal Interaction:** Control your desktop using **voice commands**, **hand gestures**, a floating **command bar**, or the **mobile companion app**.
+### 🗣️ Multi-Modal Interaction
+Control your desktop using voice commands (with biometric speaker verification), hand gestures, a floating command bar, or the mobile companion app.
 
-* **🧠 Proactive Intelligence:** K.A.I.R.O.S. watches for repetitive workflows and uses a local LLM to **suggest new automation macros** on the fly. Its "Guardian Mode" detects when you're in a flow state and can be configured to silence distractions.
+### 🧠 Proactive Intelligence
+K.A.I.R.O.S. watches for repetitive workflows using its SessionAnalyzer and leverages a local LLM to suggest new automation macros on the fly. Its FlowStateWorker can detect when you're in a state of deep work to manage future interactions.
 
-* **🧬 Adaptive Personality:** Provide feedback like "be more concise" or "that was helpful," and the AI's personality traits (**verbosity, formality, proactivity**) will adjust over time.
+### 🧬 Adaptive Personality
+Provide feedback like "be more concise" or "that was helpful," and the AI's personality traits (verbosity, formality, proactivity) will adjust for future LLM-generated responses.
 
-* **🔗 Symbiotic PC-Mobile Link:**
-    * **Shared Clipboard:** Copy on your PC, paste on your phone, and vice-versa.
-    * **File Handoff:** Seamlessly transfer a document you're reading on your PC to your phone, opening it to the exact same page.
-    * **Browser Handoff:** Send the webpage you're viewing on your PC directly to your phone's browser.
-    * **Notification Mirroring:** See your phone's notifications on your desktop dashboard.
+### 🔗 Symbiotic PC-Mobile Link
 
-* **🤖 Dynamic Task Execution:** Ask K.A.I.R.O.S. to perform complex tasks. It uses a local LLM (**Phi-3**) to write, review, and execute sandboxed Python scripts to get the job done.
+- **Shared Clipboard**: Copy on your PC, paste on your phone, and vice-versa.
+- **Document Handoff**: Seamlessly transfer a PDF you're viewing on your PC to your phone, opening it to the same page.
+- **Browser & Spotify Handoff**: Send the current webpage or Spotify song from your PC directly to your phone.
+- **Headset Handoff**: Trigger your phone to connect to your Bluetooth headset, disconnecting it from the PC.
+- **Notification Mirroring**: See your phone's notifications appear on your desktop dashboard.
 
-* **LOCAL FIRST & PRIVACY-FOCUSED:** All core AI models (Transcription, NLU, Speaker Verification, LLM) run **100% locally on your machine**. Your data stays with you.
+### 🤖 Dynamic Task Execution
+Ask K.A.I.R.O.S. to perform complex tasks. It uses a local LLM (Phi-3) to write, present for review, and execute sandboxed Python scripts using a toolbox of system primitives.
 
-* **🛠️ Customizable & Extensible:**
-    * Create custom voice commands and complex macros through the UI.
-    * The UI is **generative**, reconfiguring itself based on your current task (e.g., "Coding" vs. "Browsing").
-    * A simple plugin system allows for easy expansion of capabilities.
+### 🔒 LOCAL FIRST & PRIVACY-FOCUSED
+All core AI models (Transcription, NLU, Speaker Verification, LLM) run 100% locally on your machine. Your activity logs and long-term memory (vector database) are also stored locally.
 
----
+### 🛠️ Customizable & Extensible
+
+- Create custom voice commands and complex multi-step macros through the UI.
+- The UI is generative, using the LLM to reconfigure the dashboard layout based on your current detected task.
+- A simple plugin system allows for easy expansion of KAIROS's built-in capabilities.
 
 ## Architecture Overview 🏗️
 
-K.A.I.R.O.S. is built on a decoupled, multi-threaded architecture to ensure the UI remains responsive while handling numerous background tasks.
+K.A.I.R.O.S. uses a decoupled, multi-threaded architecture. A central MainWindow orchestrates various "Worker" threads that sense the environment and perform actions, ensuring the UI remains responsive.
 
 ```mermaid
 graph TD
-    %% Define styles for different component types for better readability
-    classDef core fill:#e9f2fc,stroke:#4a90e2,stroke-width:3px,color:#000
-    classDef worker fill:#e6fcf5,stroke:#50e3c2,stroke-width:2px,color:#000
-    classDef service fill:#f3f4f6,stroke:#6b7280,stroke-width:2px,color:#000
-    classDef mobile fill:#fce4ec,stroke:#880e4f,stroke-width:2px,color:#000
-    classDef io fill:#fff3e0,stroke:#e65100,stroke-width:2px,color:#000
-    classDef data fill:#f1f0ef,stroke:#78716c,stroke-width:2px,color:#000
-
-    %% External Entities
-    subgraph External Entities
-        User((User<br/>Voice, Gestures,<br/>Text Input)):::io
-        GitHub((GitHub<br/>Version Updates)):::io
-    end
-    
-    %% K.A.I.R.O.S. Mobile Companion
-    subgraph Mobile ["K.A.I.R.O.S. Mobile Companion (Flutter)"]
+    subgraph User Interaction
         direction LR
-        FlutterUI[Flutter UI<br/>Dashboard, File Transfer]:::mobile
-        ConnectionService[Connection Service<br/>WebSocket + Reconnection]:::mobile
-        NotificationService[Notification Service<br/>Background Listener]:::mobile
+        User((User))
+        MobileApp[📱<br>Flutter App]
     end
 
-    %% K.A.I.R.O.S. Desktop Core
-    subgraph Desktop ["K.A.I.R.O.S. Desktop Core (Python/PySide6)"]
-        direction TB
-        
-        %% Perception & I/O Layer
-        subgraph Perception ["Perception & I/O Layer"]
+    subgraph "K.A.I.R.O.S. Desktop Application"
+        MainWindow["🖥️ MainWindow (UI Thread)"]
+
+        subgraph "SENSE (Input Workers)"
             direction LR
-            AudioWorker["Audio Worker<br/>VAD, Speaker Verification, Whisper"]:::worker
-            VideoWorker["Video Worker<br/>Gestures & Pose Tracking"]:::worker
-            InputMonitor["Input Monitor<br/>KPM & Mouse Metrics"]:::worker
-            ClipboardWorker["Clipboard Worker<br/>Clipboard Change Detection"]:::worker
-            ActivityLogger["Activity Logger<br/>Active Window Tracking"]:::worker
+            AudioWorker["🎤 Audio Worker<br>(Whisper, VAD, Speaker ID)"]
+            VideoWorker["📹 Video Worker<br>(MediaPipe Gestures)"]
+            ActivityLogger["📝 Activity Logger<br>(Window & Input Monitoring)"]
+        end
+
+        subgraph "THINK (The Brain)"
+            ActionManager{"🧠 Action Manager<br>(Central Orchestrator)"}
+            NluEngine["🗣️ NLU Engine<br>(Intent Recognition)"]
+            LLMHandler["🤖 LLM Handler<br>(Phi-3 Interface)"]
+            ProactiveEngine["🎯 Proactive Engine<br>(Flow, Task, Session Workers)"]
         end
         
-        %% Core Logic & Orchestration
-        subgraph CoreLogic ["Core Logic (The Brain)"]
-            ActionManager{"Action Manager<br/>Central Intent Orchestrator"}:::core
-            NluEngine["NLU Engine<br/>Intent Recognition"]:::service
-            MainWindow["MainWindow<br/>PySide6 UI Thread"]
+        subgraph "ACT (Output & Services)"
+            direction LR
+            SpeakerWorker["🔊 Speaker Worker<br>(TTS Synthesis)"]
+            ApiServer["🌐 API Server<br>(FastAPI & WebSocket)"]
+            Automation["⚙️ System Automation<br>(pyautogui, playwright)"]
         end
         
-        %% Proactive Intelligence Layer
-        subgraph ProactiveIntel ["Proactive Intelligence Layer"]
+        subgraph "MEMORY"
             direction LR
-            TaskContext["Task Context Worker"]:::worker
-            FlowState["Flow State Worker"]:::worker
-            SessionAnalyzer["Session Analyzer"]:::worker
-            HeuristicsTuner["Heuristics Tuner"]:::worker
-        end
-        
-        %% AI, Data & Communication Services
-        subgraph Services ["AI, Data & Communication Services"]
-            direction LR
-            APIServer[(API Server<br/>FastAPI & WebSocket)]:::service
-            DiscoveryWorker["Discovery Worker<br/>UDP Broadcast"]:::worker
-            LLMHandler[(LLM Handler<br/>Ollama/Phi-3 Interface)]:::service
-            MemoryNexus[("Memory Nexus<br/>ChromaDB Vector Store")]:::data
-            SpeakerWorker["Speaker Worker<br/>TTS Synthesis"]:::worker
-            DatabaseManager[("SQLite DB<br/>Feedback & Analytics")]:::data
-            SettingsManager[("Settings Manager<br/>config.json")]:::data
-            UpdateChecker["Update Checker"]:::worker
+            SQLiteDB[("🗃️ SQLite DB<br>Feedback & Logs")]
+            ChromaDB[("🧠 ChromaDB<br>Vector Memory")]
+            Settings[("⚙️ config.json")]
         end
     end
+
+    %% Data Flows
+    User -- "Voice/Gestures/Text" --> MainWindow
+    MobileApp <-- WebSocket --> ApiServer
+
+    MainWindow -- "Raw Input" --> AudioWorker & VideoWorker & ActivityLogger
     
-    %% --- Define Connections ---
-
-    %% User Input -> Perception
-    User -- "Voice Commands" --> AudioWorker
-    User -- "Hand Gestures" --> VideoWorker
-    User -- "Keyboard/Mouse Events" --> InputMonitor
-    User -- "Text Commands" --> MainWindow
-
-    %% Perception -> Core Logic & Proactive Intelligence
-    AudioWorker -- "Transcribed Text" --> NluEngine
+    AudioWorker -- "Transcription" --> NluEngine
     VideoWorker -- "Gesture Intent" --> ActionManager
-    VideoWorker -- "Head Pose Stats" --> FlowState
-    InputMonitor -- "Activity Metrics" --> FlowState
-    ActivityLogger -- "Active Window Log" --> TaskContext
-    ActivityLogger -- "Action Sequence" --> SessionAnalyzer
+    ActivityLogger -- "User Activity" --> ProactiveEngine
     
-    %% Core Logic Interactions
-    MainWindow -- "UI Events" --> ActionManager
-    NluEngine -- "Intent & Entities Object" --> ActionManager
-    ActionManager -- "Executes System Actions" --> User
-    ActionManager -- "Speaks to User" --> SpeakerWorker
-    ActionManager -- "Generates Dynamic Task" --> LLMHandler
-    ActionManager -- "Queries/Stores Memories" --> MemoryNexus
-    ActionManager -- "Logs Command/Feedback" --> DatabaseManager
-    ActionManager -- "Reads/Writes Settings" --> SettingsManager
+    NluEngine -- "Intent & Entities" --> ActionManager
+    ProactiveEngine -- "Suggestions & Context" --> ActionManager
+    ActionManager -- "Commands" --> SpeakerWorker & Automation & LLMHandler
     
-    %% Proactive Intelligence -> Core Logic
-    TaskContext -- "User Task Changed (e.g. 'Coding')" --> ActionManager
-    FlowState -- "Flow State Changed (Guardian Mode)" --> ActionManager
-    SessionAnalyzer -- "Macro Suggestion" --> ActionManager
-    HeuristicsTuner -- "User Alert: 'Recommend Retraining'" --> MainWindow
-    
-    %% Data & Service Connections
-    DatabaseManager -- "NLU Accuracy Stats" --> HeuristicsTuner
-    UpdateChecker -- "New Version Available" --> MainWindow
-    UpdateChecker -- "Checks for update.txt" --> GitHub
-    ClipboardWorker -- "Forwards Clipboard Data" --> APIServer
-    
-    %% Mobile Communication Flow
-    DiscoveryWorker -- "Broadcasts PC IP" --> ConnectionService
-    APIServer <-- "WebSocket / API Calls" --> ConnectionService
-    ConnectionService -- "Handles UI Logic" --> FlutterUI
-    NotificationService -- "Forwards Notifications" --> APIServer
+    ActionManager -- "Read/Write" --> SQLiteDB & ChromaDB & Settings
+    ApiServer -- "Commands from Mobile" --> ActionManager
 ```
 
----
+## Tech Stack 🛠️
 
-## 🛠️ Tech Stack
-
-| Category           | Technologies                                                                                        |
-| ------------------ | --------------------------------------------------------------------------------------------------- |
-| **Backend** | Python, PySide6 (Qt), FastAPI, Uvicorn, Playwright                                                  |
-| **AI / ML** | PyTorch, Sentence Transformers, OpenAI Whisper, SpeechBrain, Spacy, MediaPipe, Ollama (Phi-3)        |
-| **Mobile Frontend**| Flutter, Dart, Provider, WebSocketChannel                                                           |
-| **Databases & Tools**| SQLite, ChromaDB (Vector DB), Git, VS Code, PyInstaller                                             |
-
----
+| Category | Technologies |
+|----------|-------------|
+| **Desktop App** | Python, PySide6 (Qt for Python) |
+| **Mobile App** | Flutter, Dart |
+| **Communication** | FastAPI, WebSockets, UDP (for discovery) |
+| **AI / ML** | PyTorch, Sentence Transformers, OpenAI Whisper, SpeechBrain, MediaPipe, Ollama (Phi-3) |
+| **Databases & Tools** | SQLite, ChromaDB (Vector DB), Pydantic |
 
 ## Getting Started 🚀
 
@@ -182,81 +115,75 @@ Follow these steps to get K.A.I.R.O.S. running on your local machine.
 
 ### Prerequisites
 
-* Python 3.11+
-* Flutter SDK
-* An NVIDIA GPU is **highly recommended** for better performance, but not strictly required.
-* [Ollama](https://ollama.com/) installed and running for dynamic task execution.
+- Python 3.11+
+- Flutter SDK installed and configured for mobile development
+- An NVIDIA GPU is highly recommended for acceptable AI model performance
+- Ollama installed and running
 
 ### Installation
 
-1.  **Clone the repository:**
-    ```sh
-    git clone <your-repo-url>
-    cd kairos_project
-    ```
+1. **Clone the repository:**
 
-2.  **Set up the Python Environment:**
-    ```sh
-    # Create a virtual environment
-    python -m venv venv
+   ```bash
+   git clone https://github.com/your-username/kairos_project.git
+   cd kairos_project
+   ```
 
-    # Activate it
-    # On Windows:
-    .\venv\Scripts\activate
-    # On macOS/Linux:
-    # source venv/bin/activate
+2. **Set up the Python Environment:**
 
-    # Install dependencies
-    pip install -r requirements.txt
-    ```
+   ```bash
+   # Create and activate a virtual environment
+   python -m venv venv
+   .\venv\Scripts\activate
 
-3.  **Download AI Models:**
-    The first time you run the app, the required models (Whisper, SpeechBrain, etc.) will be downloaded automatically. This may take some time.
+   # Install all dependencies
+   pip install -r requirements.txt
+   ```
 
-4.  **Pull the Local LLM:**
-    Make sure Ollama is running and pull the Phi-3 model:
-    ```sh
-    ollama pull phi3
-    ```
+3. **Download AI Models:**
 
-5.  **Voice Enrollment (CRITICAL STEP):**
-    You must enroll your voice before the first launch.
-    ```sh
-    python enroll_voice.py
-    ```
-    Follow the on-screen instructions to create your voiceprint.
+   - **NLU & Spacy**: The first time you run `main.py`, the sentence-transformer and spacy models will be downloaded automatically.
+   - **LLM**: Make sure the Ollama desktop application is running, then pull the Phi-3 model via terminal:
 
-6.  **Configure Environment Variables:**
-    Rename the `.env.example` file to `.env`. If you plan to use Spotify integration in the future, you will need to add your credentials there.
+   ```bash
+   ollama pull phi3
+   ```
 
-7.  **Set up the Flutter App:**
-    ```sh
-    # Navigate to the mobile app directory
-    cd kairos_mobile_app
+4. **Voice Enrollment (CRITICAL FIRST STEP):**
 
-    # Get dependencies
-    flutter pub get
+   You must create a voiceprint for the speaker verification to work.
 
-    # Return to the root directory
-    cd ..
-    ```
+   ```bash
+   python enroll_voice.py
+   ```
 
-8.  **Launch K.A.I.R.O.S.!**
-    ```sh
-    python main.py
-    ```
+   Follow the on-screen instructions. This only needs to be done once.
 
----
+5. **Set up the Flutter App:**
 
-## 💡 Future Roadmap
+   ```bash
+   cd kairos_mobile_app
+   flutter pub get
+   cd ..
+   ```
 
--   [ ] **Advanced Spotify Integration:** Full playback control, playlist management, and song recommendations.
--   [ ] **Calendar & Email Plugin:** Add capabilities to read schedules and compose emails.
--   [ ] **Enhanced Memory System:** Enable the AI to form connections between memories and summarize past activities.
--   [ ] **Web-Based Configuration Dashboard:** A more powerful way to manage macros and settings.
+6. **Launch K.A.I.R.O.S.!**
 
----
+   Start the main desktop application from the root directory:
 
-## License
+   ```bash
+   python main.py
+   ```
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE.md) file for details.
+   Launch the mobile app on your connected device or emulator (e.g., from VS Code with F5).
+
+## Future Roadmap 💡
+
+- [ ] **Advanced Spotify Integration**: Full playback control and playlist management
+- [ ] **Plugin Development**: Create plugins for calendar access, email, and other services
+- [ ] **Enhanced Memory**: Enable the AI to form connections between memories and generate summaries of past activities
+- [ ] **Web-Based Configuration**: A more powerful dashboard for managing macros, settings, and plugins
+
+## License 📄
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
