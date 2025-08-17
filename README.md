@@ -125,7 +125,7 @@ Follow these steps to get K.A.I.R.O.S. running on your local machine.
 1. **Clone the repository:**
 
    ```bash
-   git clone https://github.com/your-username/kairos_project.git
+   git clone https://github.com/Pranav20Agrawal/kairos_project.git
    cd kairos_project
    ```
 
@@ -184,6 +184,14 @@ Follow these steps to get K.A.I.R.O.S. running on your local machine.
 - [ ] **Enhanced Memory**: Enable the AI to form connections between memories and generate summaries of past activities
 - [ ] **Web-Based Configuration**: A more powerful dashboard for managing macros, settings, and plugins
 
+## Contributing 🤝
+
+We welcome contributions! Please feel free to submit a Pull Request.
+
 ## License 📄
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Support 💬
+
+If you encounter any issues or have questions, please [open an issue](https://github.com/Pranav20Agrawal/kairos_project/issues) on GitHub.
