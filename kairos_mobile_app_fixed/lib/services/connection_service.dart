@@ -649,23 +649,6 @@ class ConnectionService extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _writeSingleChunk(List<int> chunk) {
-    try {
-      _fileSink!.add(chunk);
-      _receivedBytes += chunk.length;
-      
-      if (_totalBytes > 0) {
-        final progress = (_receivedBytes / _totalBytes * 100).toStringAsFixed(0);
-        _addDebugLog(
-            "Received chunk: ${chunk.length} bytes, total: $_receivedBytes/$_totalBytes ($progress%)");
-        _updateStatus("Receiving file... $progress%");
-        notifyListeners();
-      }
-    } catch (e) {
-      _addDebugLog("Error writing chunk: $e");
-    }
-  }
-
   Future<void> _handleFileEnd() async {
     if (!_fileTransferActive) {
       _addDebugLog("File end received but transfer not active.");
