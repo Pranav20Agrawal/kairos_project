@@ -1,7 +1,7 @@
 # src/workers/goal_oriented_worker.py
 
 import logging
-from PySide6.QtCore import QObject, Slot
+from PySide6.QtCore import QObject, Slot, QTimer
 
 # Forward declarations for type hinting
 from typing import TYPE_CHECKING
