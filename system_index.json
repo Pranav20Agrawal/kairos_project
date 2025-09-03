@@ -1,6 +1,7 @@
 {
     "applications": {
         "administrative tools": "C:\\Users\\agpra\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Administrative Tools.lnk",
+        "cluely": "C:\\Users\\agpra\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Cluely.lnk",
         "er death counter": "C:\\Users\\agpra\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\ER Death Counter.lnk",
         "figma": "C:\\Users\\agpra\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\Figma.lnk",
         "file explorer": "C:\\Users\\agpra\\AppData\\Roaming\\Microsoft\\Windows\\Start Menu\\Programs\\File Explorer.lnk",
@@ -50,6 +51,7 @@
         "hp documentation": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\HP Documentation.lnk",
         "lastpass": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\LastPass.lnk",
         "microsoft edge": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\Microsoft Edge.lnk",
+        "obs studio": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\OBS Studio.lnk",
         "onedrive": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\OneDrive.lnk",
         "onenote": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\OneNote.lnk",
         "powerpoint": "C:\\ProgramData\\Microsoft\\Windows\\Start Menu\\Programs\\PowerPoint.lnk",

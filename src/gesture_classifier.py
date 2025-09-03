@@ -64,7 +64,7 @@ class GestureClassifier:
             thumb_is_tucked = self._get_distance(
                 landmarks[HAND_LANDMARK.THUMB_TIP], 
                 landmarks[HAND_LANDMARK.INDEX_FINGER_PIP]
-            ) < 0.08
+            ) < 0.1
 
             return thumb_is_tucked
         except (IndexError, AttributeError):
@@ -137,16 +137,16 @@ class GestureClassifier:
             return False
 
     def _is_open_palm(self, landmarks: Any) -> bool:
-        """Open Palm: All five fingers are extended."""
+        """Open Palm: The four main fingers are extended."""
         try:
-            all_fingers = [
+            # We only check the four main fingers, as the thumb position can vary.
+            four_fingers = [
                 (HAND_LANDMARK.INDEX_FINGER_TIP, HAND_LANDMARK.INDEX_FINGER_MCP),
                 (HAND_LANDMARK.MIDDLE_FINGER_TIP, HAND_LANDMARK.MIDDLE_FINGER_MCP),
                 (HAND_LANDMARK.RING_FINGER_TIP, HAND_LANDMARK.RING_FINGER_MCP),
-                (HAND_LANDMARK.PINKY_TIP, HAND_LANDMARK.PINKY_MCP),
-                (HAND_LANDMARK.THUMB_TIP, HAND_LANDMARK.THUMB_IP)
+                (HAND_LANDMARK.PINKY_TIP, HAND_LANDMARK.PINKY_MCP)
             ]
-            return self._are_fingers_extended(landmarks, all_fingers)
+            return self._are_fingers_extended(landmarks, four_fingers)
         except (IndexError, AttributeError):
             return False
 

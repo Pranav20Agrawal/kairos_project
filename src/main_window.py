@@ -1,12 +1,17 @@
 # src/main_window.py
 
-from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl, Slot, QTimer
+# UI core primitives, signals/slots, timers, and types. Signal defines custom event channels; QTimer is used for the shutdown failsafe.
+from PySide6.QtCore import Signal, QDateTime, QTime, Qt, QUrl, Slot, QTimer, QThreadPool
+# Window close events, tray/menu icons/actions, and QDesktopServices.openUrl() to open links (used for update URL).
 from PySide6.QtGui import QCloseEvent, QIcon, QAction, QDesktopServices
+# Main UI building blocks. QSystemTrayIcon behavior is platform-dependent; Windows/Linux support is good, macOS requires special attention (app bundle).
 from PySide6.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QStackedWidget,
     QFrame, QMessageBox, QStatusBar, QSystemTrayIcon, QMenu, QApplication
 )
+# Plays short sounds. Note: audio backend may behave differently across platforms and might need platform-specific fallbacks.
 from PySide6.QtMultimedia import QSoundEffect
+# Path handling
 from pathlib import Path
 import threading
 from typing import Any, Dict, List
@@ -52,6 +57,8 @@ class KairosMainWindow(QMainWindow):
     def __init__(self, app_version: str) -> None:
         super().__init__()
         self.app_version = app_version
+        self.thread_pool = QThreadPool()
+        logger.info(f"Global thread pool created with {self.thread_pool.maxThreadCount()} threads.")
         logger.info(f"K.A.I.R.O.S. version {self.app_version} initializing...")
         self.setWindowTitle(f"K.A.I.R.O.S. - Command Center v{self.app_version}")
         self.setGeometry(100, 100, 1200, 800)
@@ -95,7 +102,8 @@ class KairosMainWindow(QMainWindow):
             self.interrupt_event, 
             self.speaker_worker, 
             kairos_api, 
-            self.memory_manager
+            self.memory_manager,
+            self.thread_pool
         )
         
         # Initialize lightweight audio worker but don't start it
@@ -655,6 +663,8 @@ class KairosMainWindow(QMainWindow):
         log_content = f"Intent: {intent}" + (f" | Entities: {entity_str}" if entities else "")
         log_data = {"log_id": log_id, "original_text": text, "predicted_intent": intent, "predicted_entity": entity_str}
         self.new_log_entry.emit(timestamp, "[BRAIN]", log_content, "INFO", log_data)
+        
+        self.action_manager.execute_action(intent, entities, emotion)
         
     def _shutdown_application(self) -> None:
             """Gracefully stops all worker threads and saves settings."""

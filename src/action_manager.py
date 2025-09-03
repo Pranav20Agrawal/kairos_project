@@ -15,7 +15,7 @@ import psutil
 import pytesseract
 import re
 from datetime import datetime
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Signal, QThread, QRunnable, Slot
 from src.context_manager import ContextManager
 from src.settings_manager import SettingsManager
 from src.llm_handler import LlmHandler
@@ -52,11 +52,30 @@ from src import hotspot_manager
 
 logger = logging.getLogger(__name__)
 
+class WorkerSignals(QObject):
+    """Defines the signals available from a running worker thread."""
+    task_complete = Signal(str, str)
+
+class DynamicTaskWorker(QRunnable): # <<< CHANGE THIS from QThread
+    """Worker to handle LLM script generation using the global thread pool."""
+    def __init__(self, llm_handler, query):
+        super().__init__()
+        self.llm_handler = llm_handler
+        self.query = query
+        self.signals = WorkerSignals()
+
+    @Slot() # Needed for QRunnable
+    def run(self):
+        plan, script = self.llm_handler.generate_script(self.query)
+        self.signals.task_complete.emit(plan, script)
+
+
 class ActionManager(QObject):
     ocr_requested = Signal()
 
-    def __init__(self, settings_manager: SettingsManager, interrupt_event: threading.Event, speaker_worker: SpeakerWorker, api_manager, memory_manager: "MemoryManager") -> None:
+    def __init__(self, settings_manager: SettingsManager, interrupt_event: threading.Event, speaker_worker: SpeakerWorker, api_manager, memory_manager: "MemoryManager", thread_pool) -> None:
         super().__init__()
+        self.thread_pool = thread_pool
         self.settings_manager: SettingsManager = settings_manager
         self.context_manager: ContextManager = ContextManager()
         self.llm_handler: LlmHandler | None = None
@@ -478,13 +497,26 @@ class ActionManager(QObject):
         if not self.llm_handler:
             self._speak("The dynamic task handler is not available.")
             return
+
         self._speak(f"Thinking about: {query}")
-        plan, script = self.llm_handler.generate_script(query)
-        if not script or "error" in script.lower():
+
+        # Create the worker and connect its signal
+        worker = DynamicTaskWorker(self.llm_handler, query)
+        worker.signals.task_complete.connect(self._on_dynamic_task_complete)
+
+        # Execute the worker in the thread pool
+        self.thread_pool.start(worker)
+
+    def _on_dynamic_task_complete(self, plan: str, script: str | None):
+        """This function runs on the main thread after the LLM worker is finished."""
+        if not script or "error" in (script or "").lower():
             self._speak(f"I was unable to generate a valid plan. The model responded: {script}")
             return
+
         self._speak(f"My plan is to: {plan}")
         time.sleep(0.5)
+
+        # Now it is safe to create a QMessageBox because we are on the main thread
         msg_box = QMessageBox()
         msg_box.setIcon(QMessageBox.Icon.Warning)
         msg_box.setWindowTitle("Confirm Dynamic Action")
@@ -493,7 +525,9 @@ class ActionManager(QObject):
         msg_box.setDetailedText(script)
         msg_box.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         msg_box.setDefaultButton(QMessageBox.StandardButton.No)
+
         reply = msg_box.exec()
+
         if reply == QMessageBox.StandardButton.Yes:
             self._speak("Executing.")
             try:

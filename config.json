@@ -598,6 +598,21 @@
             "initial_prompt": null,
             "conversation_state": null,
             "is_high_risk": true
+        },
+        "GET_CURRENT_TIME": {
+            "keywords": [
+                "what is the time",
+                "what's the time",
+                "tell me the time",
+                "current time"
+            ],
+            "canonical": "get the current time",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": false
         }
     },
     "sites": {

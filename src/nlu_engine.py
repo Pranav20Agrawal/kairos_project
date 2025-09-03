@@ -190,6 +190,20 @@ class NluEngine:
     def process(self, text: str, context: str | None = None) -> tuple[str | None, Dict[str, Any] | None, str | None]:
         text_lower = text.lower().strip()
         logger.info(f"Processing NLU for: '{text}'")
+        
+        # ---- START DEBUG BLOCK ----
+        start_time = time.time()
+        query_embedding = self.model.encode(text, convert_to_tensor=True)
+        cos_scores = util.cos_sim(query_embedding, self.canonical_embeddings)[0]
+        top_result = torch.topk(cos_scores, k=1)
+
+        top_intent_index = top_result.indices[0].item()
+        top_intent_score = top_result.values[0].item()
+        top_intent_name = self.intent_keys[top_intent_index]
+
+        logger.debug(f"NLU SEMANTIC SEARCH: Best match is '{top_intent_name}' with score {top_intent_score:.4f}")
+        logger.debug(f"NLU Latency: {(time.time() - start_time) * 1000:.2f} ms")
+        # ---- END DEBUG BLOCK ----
 
         # --- NEW CODE BLOCK START ---
         # PRIORITY 0: Exact keyword matching for unambiguous commands
