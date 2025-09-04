@@ -38,14 +38,19 @@ class SessionAnalyzer(QObject):
         self.llm_handler = llm_handler
         self.current_session: List[Dict] = []
         
+        # <<< ADD THIS NEW PROPERTY >>>
+        self.session_start_time = 0.0
+
         self.session_timeout_timer = QTimer(self)
         self.session_timeout_timer.setSingleShot(True)
         self.session_timeout_timer.setInterval(self.SESSION_TIMEOUT_SECONDS * 1000)
         self.session_timeout_timer.timeout.connect(self._analyze_session)
-
     @Slot(dict)
     def on_activity_logged(self, activity: dict) -> None:
         """Receives a new activity from the logger and adds it to the current session."""
+        # If this is the first action of a new session, record the start time
+        if not self.current_session:
+            self.session_start_time = time.perf_counter()
         # Add activity to the session, avoiding direct duplicates
         if not self.current_session or self.current_session[-1]["window_title"] != activity["window_title"]:
             self.current_session.append(activity)
@@ -70,6 +75,9 @@ class SessionAnalyzer(QObject):
             suggestion = self.llm_handler.analyze_workflow(session_log)
             
             if suggestion and "macro_name" in suggestion:
+                end_time = time.perf_counter()
+                latency_ms = (end_time - self.session_start_time) * 1000
+                logger.info(f"[PERF_METRIC] Proactive suggestion generation took {latency_ms:.2f} ms")
                 logger.info(f"LLM suggested a new macro: '{suggestion['macro_name']}'")
                 # Add the original action sequence to the suggestion dictionary
                 suggestion['actions'] = session_log

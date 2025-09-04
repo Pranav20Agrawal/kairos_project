@@ -187,39 +187,53 @@ class AudioWorker(QThread):
                             silent_chunks = 0
                         
                         if silent_chunks > num_silent_chunks_to_end:
-                            logger.info("Recording finished due to silence. Processing audio...")
-                            recording_np = np.concatenate(recorded_frames)
-                            
-                            audio_float32 = recording_np.astype(np.float32) / 32768.0
-                            audio_tensor = torch.from_numpy(audio_float32)
-                            
-                            speech_timestamps = self.detect_speech_with_vad(audio_tensor, RATE)
+                                logger.info("Recording finished due to silence. Processing audio...")
+                                recording_np = np.concatenate(recorded_frames)
+                                
+                                audio_float32 = recording_np.astype(np.float32) / 32768.0
+                                audio_tensor = torch.from_numpy(audio_float32)
+                                
+                                # --- ADD THIS LINE ---
+                                start_time = time.perf_counter()
 
-                            if not speech_timestamps:
-                                logger.warning("VAD found no speech. Discarding.")
-                            else:
-                                start, end = speech_timestamps[0]['start'], speech_timestamps[-1]['end']
-                                # --- FIX APPLIED HERE ---
-                                # Ensure we are slicing a flattened array to get a 1D result
-                                clean_audio_segment = audio_float32.flatten()[start:end]
-                                clean_audio_tensor = torch.from_numpy(clean_audio_segment)
+                                speech_timestamps = self.detect_speech_with_vad(audio_tensor, RATE)
 
-                                if self.is_user_speaking(clean_audio_tensor):
-                                    logger.info("User verified. Transcribing command...")
-                                    temp_file = "transcribe_temp.wav"
-                                    # Use the clean audio segment for transcription as well
-                                    write(temp_file, RATE, (clean_audio_segment * 32767).astype(np.int16))
-                                    result = self.whisper_model.transcribe(temp_file, fp16=torch.cuda.is_available())
-                                    text: str = result["text"].strip()
-                                    os.remove(temp_file)
-                                    
-                                    if text:
-                                        logger.info(f"Transcription result: '{text}'")
-                                        self.new_transcription_with_emotion.emit(text, "neu")
+                                if not speech_timestamps:
+                                    logger.warning("VAD found no speech. Discarding.")
                                 else:
-                                    logger.warning("Speaker not verified. Discarding audio.")
-                            
-                            is_recording = False
+                                    start, end = speech_timestamps[0]['start'], speech_timestamps[-1]['end']
+                                    clean_audio_segment = audio_float32.flatten()[start:end]
+                                    clean_audio_tensor = torch.from_numpy(clean_audio_segment)
+
+                                    # --- is_user_speaking() already logs the score, so we just need the time ---
+                                    
+                                    if self.is_user_speaking(clean_audio_tensor):
+                                        # --- ADD THESE LINES ---
+                                        end_time = time.perf_counter()
+                                        latency_ms = (end_time - start_time) * 1000
+                                        logger.info(f"[PERF_METRIC] Speaker VERIFIED in {latency_ms:.2f} ms")
+                                        # --- END OF ADDED LINES ---
+
+                                        logger.info("User verified. Transcribing command...")
+                                        temp_file = "transcribe_temp.wav"
+                                        write(temp_file, RATE, (clean_audio_segment * 32767).astype(np.int16))
+                                        result = self.whisper_model.transcribe(temp_file, fp16=torch.cuda.is_available())
+                                        text: str = result["text"].strip()
+                                        os.remove(temp_file)
+                                        
+                                        if text:
+                                            logger.info(f"Transcription result: '{text}'")
+                                            self.new_transcription_with_emotion.emit(text, "neu")
+                                    else:
+                                        # --- ADD THESE LINES ---
+                                        end_time = time.perf_counter()
+                                        latency_ms = (end_time - start_time) * 1000
+                                        logger.info(f"[PERF_METRIC] Speaker REJECTED in {latency_ms:.2f} ms")
+                                        # --- END OF ADDED LINES ---
+                                        
+                                        logger.warning("Speaker not verified. Discarding audio.")
+                                
+                                is_recording = False
                             
         except Exception as e:
             msg = "A critical audio error occurred in the audio stream loop."

@@ -582,10 +582,7 @@
             "is_high_risk": true
         },
         "OPEN_LOCAL_ITEM": {
-            "keywords": [
-                "launch",
-                "run"
-            ],
+            "keywords": [],
             "canonical": "open a local file, folder, or application",
             "triggers": [
                 "open",
@@ -613,6 +610,30 @@
             "initial_prompt": null,
             "conversation_state": null,
             "is_high_risk": false
+        },
+        "LAUNCH_KAIROS_AI_DEVELOPMENT_WORKFLOW": {
+            "keywords": [
+                "launch kairos ai development workflow"
+            ],
+            "canonical": "execute the 'Launch KAIROS AI Development Workflow' workflow",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
+        },
+        "INITIATE_KAIROS_PROJECT_WORKFLOW": {
+            "keywords": [
+                "initiate kairos project workflow"
+            ],
+            "canonical": "execute the 'Initiate KAIROS Project Workflow' workflow",
+            "triggers": [],
+            "contexts": [],
+            "starts_conversation": false,
+            "initial_prompt": null,
+            "conversation_state": null,
+            "is_high_risk": true
         }
     },
     "sites": {
@@ -662,6 +683,54 @@
             {
                 "action": "OPEN_APP",
                 "param": "python3.11.exe"
+            }
+        ],
+        "Launch KAIROS AI Development Workflow": [
+            {
+                "action": "OPEN_APP",
+                "param": "code.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "chrome.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "explorer.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "applicationframehost.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "explorer.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "applicationframehost.exe"
+            }
+        ],
+        "Initiate KAIROS Project Workflow": [
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "explorer.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "python3.11.exe"
+            },
+            {
+                "action": "OPEN_APP",
+                "param": "chrome.exe"
             }
         ]
     },

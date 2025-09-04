@@ -134,7 +134,7 @@ class ActionManager(QObject):
     def reload_maps(self) -> None:
         settings = self.settings_manager.settings
         self.site_map = {k.lower(): v for k, v in settings.sites.items()}
-        self.macros = {k.lower(): [step.model_dump() for step in v] for k, v in settings.macros.items()}
+        self.macros = {k: [step.model_dump() for step in v] for k, v in settings.macros.items()}
         
         base_actions = {
             "[OPEN_LOCAL_ITEM]": self._action_open_local_item,
@@ -180,14 +180,21 @@ class ActionManager(QObject):
         logger.debug("Action maps reloaded.")
 
     def execute_action(self, intent: str, entities: Dict[str, Any] | None = None, emotion: str | None = None) -> None:
-        # ... (This method is unchanged, keep your existing code)
         self.current_emotion = emotion or "neu"
         logger.info(f"Attempting to execute action for intent: {intent}")
-        clean_intent = intent.strip("[]").lower()
-        if clean_intent in self.macros:
-            logger.info(f"Executing macro '{clean_intent}'...")
-            self._execute_macro(self.macros[clean_intent])
+        
+        # --- FINAL CORRECTED LOGIC ---
+        # Strip the brackets to get the clean name, e.g., "LAUNCH_KAIROS_AI_DEVELOPMENT_WORKFLOW"
+        intent_key = intent.strip("[]")
+
+        # PRIORITY 1: Check if the intent key matches a macro.
+        if intent_key in self.macros:
+            logger.info(f"Executing macro by exact intent match: '{intent_key}'")
+            # Execute the steps associated with that macro name
+            self._execute_macro(self.macros[intent_key])
             return
+
+        # PRIORITY 2: If it's not a macro, check if it's a built-in action.
         action_function = self.action_map.get(intent)
         if action_function:
             try:

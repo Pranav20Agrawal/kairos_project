@@ -146,6 +146,8 @@ class NluEngine:
         Finds the first intent that has an exact keyword match.
         This is for high-priority, non-ambiguous commands.
         """
+        
+        start_time = time.perf_counter()
         text_lower = text.lower()
         all_items = {**self.settings_manager.settings.intents, **self.settings_manager.settings.macros}
 
@@ -171,6 +173,9 @@ class NluEngine:
                 if re.search(r"\b" + re.escape(keyword.lower()) + r"\b", text_lower):
                     logger.info(f"Keyword match found for intent: {name}")
                     return name
+                
+        end_time = time.perf_counter()
+        logger.info(f"[PERF_METRIC] Keyword match function took {(end_time - start_time) * 1000:.4f} ms")
         return None
 
     def _extract_entity(self, text: str, triggers: list[str]) -> str | None:
@@ -187,72 +192,78 @@ class NluEngine:
             return entity if entity else None
         return text.strip()
 
+    # src/nlu_engine.py
+
     def process(self, text: str, context: str | None = None) -> tuple[str | None, Dict[str, Any] | None, str | None]:
-        text_lower = text.lower().strip()
-        logger.info(f"Processing NLU for: '{text}'")
+        # Clean the input text for more reliable matching (lowercase, no apostrophes)
+        text_lower = text.lower().strip().replace("'", "")
+        logger.info(f"Processing NLU for: '{text}' (Cleaned: '{text_lower}')")
         
-        # ---- START DEBUG BLOCK ----
-        start_time = time.time()
-        query_embedding = self.model.encode(text, convert_to_tensor=True)
-        cos_scores = util.cos_sim(query_embedding, self.canonical_embeddings)[0]
-        top_result = torch.topk(cos_scores, k=1)
+        # --- NLU LOGIC CASCADE ---
+        # The engine processes commands in a specific order of priority.
 
-        top_intent_index = top_result.indices[0].item()
-        top_intent_score = top_result.values[0].item()
-        top_intent_name = self.intent_keys[top_intent_index]
+        # PRIORITY 0: Exact match for a user-created Macro's keyword.
+        # This is the highest priority to ensure custom workflows always fire correctly.
+        all_intents = self.settings_manager.settings.intents
+        for intent_key, intent_data in all_intents.items():
+            if intent_key in self.settings_manager.settings.macros:  # Check if this intent IS a macro
+                for keyword in intent_data.keywords:
+                    # If the user's command is a perfect match for the macro's keyword...
+                    if keyword.lower().strip() == text_lower:
+                        logger.info(f"Exact MACRO keyword match found: [{intent_key}]")
+                        # ...return that specific macro intent immediately.
+                        return f"[{intent_key}]", None, None
 
-        logger.debug(f"NLU SEMANTIC SEARCH: Best match is '{top_intent_name}' with score {top_intent_score:.4f}")
-        logger.debug(f"NLU Latency: {(time.time() - start_time) * 1000:.2f} ms")
-        # ---- END DEBUG BLOCK ----
-
-        # --- NEW CODE BLOCK START ---
-        # PRIORITY 0: Exact keyword matching for unambiguous commands
+        # PRIORITY 1: Exact keyword match for built-in, unambiguous commands.
+        # These are for simple, high-frequency commands like "stop" or "system status".
         exact_match_intent = self._get_exact_keyword_match(text)
         if exact_match_intent:
-            intent_data = self.settings_manager.settings.intents.get(exact_match_intent.strip("[]"))
+            intent_data = self.settings_manager.settings.intents.get(exact_match_intent)
             entities = None
             if intent_data and intent_data.triggers:
                 entity_text = self._extract_entity(text, intent_data.triggers)
                 if entity_text:
                     entities = {"entity": entity_text}
             return f"[{exact_match_intent}]", entities, None
-        # --- NEW CODE BLOCK END ---
-        
-        # --- NEW LOGIC CASCADE ---
 
-        # PRIORITY 1: Check for exact keyword match for specific, non-web intents
-        all_intents = self.settings_manager.settings.intents
-        for intent_name, intent_data in all_intents.items():
-            # These intents take precedence over general web searches
-            if intent_name in ["OPEN_PROJECT_FOLDER", "OPEN_LOCAL_ITEM"]:
-                for keyword in intent_data.keywords:
-                    if re.search(r"\b" + re.escape(keyword.lower()) + r"\b", text_lower):
-                        logger.info(f"High-priority local keyword match: [{intent_name}]")
-                        entity = self._extract_entity(text, intent_data.triggers)
-                        return f"[{intent_name}]", {"entity": entity} if entity else None, None
+        # PRIORITY 2: Heuristic rules for common patterns (local files vs. web).
+        # This prevents "open downloads" from becoming a web search.
+        if self._is_local_item_query(text):
+            entity = self._extract_entity(text, ["open", "launch", "run"])
+            logger.info(f"Query identified as LOCAL item request: '{entity}'")
+            return "[OPEN_LOCAL_ITEM]", {"entity": entity} if entity else None, None
 
-        # PRIORITY 2: Check if it's a request to open a known local application or folder
-        entity_to_check = self._extract_entity(text, ["open", "launch", "run"])
-        if entity_to_check:
-            entity_lower = entity_to_check.lower()
-            if entity_lower in self.system_index["applications"] or entity_lower in self.system_index["folders"]:
-                 logger.info(f"Query identified as LOCAL item request: '{entity_lower}'")
-                 return "[OPEN_LOCAL_ITEM]", {"entity": entity_lower}, None
-            # Fuzzy check
-            for app in self.system_index["applications"]:
-                if entity_lower in app:
-                    logger.info(f"Query identified as fuzzy LOCAL item request: '{app}'")
-                    return "[OPEN_LOCAL_ITEM]", {"entity": app}, None
-
-
-        # PRIORITY 3: If not a specific local command, check if it's a web command
-        web_nav_triggers = ["open", "go to", "search for", "find", "look up", "show me"]
-        if any(text_lower.startswith(trigger) for trigger in web_nav_triggers):
+        if self._is_web_navigation_query(text):
+            web_nav_triggers = ["open", "go to", "search for", "find", "look up", "show me"]
             entity = self._extract_entity(text, web_nav_triggers)
-            if entity:
-                logger.info(f"Routing to SEARCH_AND_NAVIGATE with entity: '{entity}'")
-                return "[SEARCH_AND_NAVIGATE]", {"entity": entity}, None
+            logger.info(f"Routing to SEARCH_AND_NAVIGATE with entity: '{entity}'")
+            return "[SEARCH_AND_NAVIGATE]", {"entity": entity} if entity else None, None
 
-        # PRIORITY 4: Fallback to LLM for anything else that is ambiguous
-        logger.info(f"No specific rule matched. Passing to LLM for dynamic task.")
+        # PRIORITY 3: Semantic search fallback for other configured intents.
+        # If no rules match, find the most semantically similar command.
+        if self.canonical_embeddings is not None and self.model is not None:
+            start_time = time.perf_counter() # Start timing for semantic search
+            query_embedding = self.model.encode(text, convert_to_tensor=True)
+            cos_scores = util.cos_sim(query_embedding, self.canonical_embeddings)[0]
+            top_result = torch.topk(cos_scores, k=1)
+            top_intent_score = top_result.values[0].item()
+            latency_ms = (time.perf_counter() - start_time) * 1000
+            
+            # We use a confidence threshold to avoid making bad guesses.
+            if top_intent_score > 0.6:
+                top_intent_index = top_result.indices[0].item()
+                top_intent_name = self.intent_keys[top_intent_index]
+                intent_data = all_intents.get(top_intent_name)
+                entities = None
+                if intent_data and intent_data.triggers:
+                    entity_text = self._extract_entity(text, intent_data.triggers)
+                    if entity_text: entities = {"entity": entity_text}
+
+                logger.debug(f"NLU SEMANTIC SEARCH: Match '{top_intent_name}' with score {top_intent_score:.4f}")
+                logger.debug(f"NLU Latency: {latency_ms:.2f} ms")
+                return f"[{top_intent_name}]", entities, None
+
+        # PRIORITY 4: Final fallback to the LLM for dynamic tasks.
+        # If no other system can understand the command, let the LLM try to build a solution.
+        logger.info("No specific rule or high-confidence match. Passing to LLM for dynamic task.")
         return "[EXECUTE_DYNAMIC_TASK]", {"query": text}, None
