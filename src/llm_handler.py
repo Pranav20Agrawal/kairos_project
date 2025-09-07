@@ -32,7 +32,6 @@ class LlmHandler:
             logger.info(f"Ollama model '{self.model}' is available.")
         except Exception as e:
             logger.error(f"Ollama connection failed: {e}. Dynamic task execution will be disabled.")
-            raise
 
     def _load_primitives_prompt(self) -> str:
         """Reads the primitives.py file to create a dynamic prompt for the LLM."""
